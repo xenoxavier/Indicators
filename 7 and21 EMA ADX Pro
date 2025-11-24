@@ -1,0 +1,102 @@
+7/21 EMA ADX Pro
+
+//@version=6
+indicator("Cruces EMA ADX Pro", overlay=true)
+
+// === INPUTS ===
+emaRapida = input.int(7, "EMA Rápida", minval=1, group="EMAs")
+emaLenta = input.int(21, "EMA Lenta", minval=1, group="EMAs")
+mostrarEMA50 = input.bool(true, "Mostrar EMA 50", group="EMAs")
+mostrarEMA200 = input.bool(true, "Mostrar EMA 200", group="EMAs")
+
+adxPeriodo = input.int(14, "Período ADX", minval=1, group="ADX")
+adxMinimo = input.float(24, "ADX Mínimo", minval=0, maxval=100, group="ADX")
+usarFiltroADX = input.bool(true, "Usar Filtro ADX", group="ADX")
+
+usarFiltroTendencia = input.bool(true, "Filtrar por Tendencia EMA 50", group="Filtros")
+usarFiltroVolumen = input.bool(false, "Filtrar por Volumen", group="Filtros")
+periodoVolumen = input.int(20, "Período Media Volumen", minval=1, group="Filtros")
+
+mostrarAlertas = input.bool(true, "Mostrar Señales", group="Visualización")
+mostrarCirculosCruce = input.bool(true, "Mostrar Círculos en Cruces", group="Visualización")
+mostrarEtiquetas = input.bool(true, "Mostrar Etiquetas", group="Visualización")
+mostrarFondo = input.bool(true, "Colorear Fondo", group="Visualización")
+
+colorEMA7Alto = input.color(color.yellow, "EMA 7 ADX Alto", group="Colores")
+colorEMA7Bajo = input.color(color.white, "EMA 7 ADX Bajo", group="Colores")
+colorEMA21Alcista = input.color(color.green, "EMA 21 Alcista", group="Colores")
+colorEMA21Bajista = input.color(color.red, "EMA 21 Bajista", group="Colores")
+colorEMA21Plana = input.color(color.blue, "EMA 21 Plana", group="Colores")
+colorCirculoAlcista = input.color(color.green, "Círculo Alcista", group="Colores")
+colorCirculoBajista = input.color(color.red, "Círculo Bajista", group="Colores")
+
+// === CÁLCULOS ===
+ema7 = ta.ema(close, emaRapida)
+ema21 = ta.ema(close, emaLenta)
+ema50 = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+
+[diPlus, diMinus, adx] = ta.dmi(adxPeriodo, adxPeriodo)
+
+volPromedio = ta.sma(volume, periodoVolumen)
+volumenAlto = volume > volPromedio
+
+// Color EMA 7 según ADX
+colorEMA7 = adx > adxMinimo ? colorEMA7Alto : colorEMA7Bajo
+
+// Color EMA 21 según dirección
+ema21Subiendo = ema21 > ema21[1] and ema21[1] > ema21[2]
+ema21Bajando = ema21 < ema21[1] and ema21[1] < ema21[2]
+
+colorEMA21 = ema21Subiendo ? colorEMA21Alcista : ema21Bajando ? colorEMA21Bajista : colorEMA21Plana
+
+// Detección de cruces
+cruceAlcista = ta.crossover(ema7, ema21)
+cruceBajista = ta.crossunder(ema7, ema21)
+
+tendenciaAlcista = close > ema50
+tendenciaBajista = close < ema50
+
+diAlcistaFuerte = diPlus > diMinus
+diBajistaFuerte = diMinus > diPlus
+
+// Señales validadas
+senalAlcista = cruceAlcista and (not usarFiltroADX or adx > adxMinimo) and (not usarFiltroTendencia or tendenciaAlcista) and (not usarFiltroVolumen or volumenAlto) and diAlcistaFuerte
+senalBajista = cruceBajista and (not usarFiltroADX or adx > adxMinimo) and (not usarFiltroTendencia or tendenciaBajista) and (not usarFiltroVolumen or volumenAlto) and diBajistaFuerte
+
+// === PLOTS ===
+plot(ema7, "EMA7", color=colorEMA7, linewidth=2)
+plot(ema21, "EMA21", color=colorEMA21, linewidth=2)
+plot(mostrarEMA50 ? ema50 : na, "EMA50", color=color.new(color.purple, 20), linewidth=2)
+plot(mostrarEMA200 ? ema200 : na, "EMA200", color=color.new(color.gray, 0), linewidth=3)
+
+// Círculos en cruces - con series bool
+circAlcista = mostrarCirculosCruce and cruceAlcista
+circBajista = mostrarCirculosCruce and cruceBajista
+
+plotshape(series=circAlcista, title="CruceAlcista", style=shape.circle, location=location.belowbar, color=colorCirculoAlcista, size=size.small)
+plotshape(series=circBajista, title="CruceBajista", style=shape.circle, location=location.abovebar, color=colorCirculoBajista, size=size.small)
+
+// Señales validadas - con series bool
+signalLong = mostrarAlertas and senalAlcista
+signalShort = mostrarAlertas and senalBajista
+
+plotshape(series=signalLong, title="LONG", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), text="LONG", size=size.normal)
+plotshape(series=signalShort, title="SHORT", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), text="SHORT", size=size.normal)
+
+// Etiquetas
+if mostrarEtiquetas and senalAlcista
+    label.new(bar_index, low, "LONG\nADX:" + str.tostring(math.round(adx,1)), style=label.style_label_up, color=color.new(color.lime, 20), textcolor=color.white, size=size.small)
+
+if mostrarEtiquetas and senalBajista
+    label.new(bar_index, high, "SHORT\nADX:" + str.tostring(math.round(adx,1)), style=label.style_label_down, color=color.new(color.red, 20), textcolor=color.white, size=size.small)
+
+// Fondo
+bgcolor(mostrarFondo and senalAlcista ? color.new(color.lime, 90) : na)
+bgcolor(mostrarFondo and senalBajista ? color.new(color.red, 90) : na)
+
+// Alertas
+alertcondition(cruceAlcista, "Cruce Alcista", "EMA 7 cruzó arriba EMA 21")
+alertcondition(cruceBajista, "Cruce Bajista", "EMA 7 cruzó abajo EMA 21")
+alertcondition(senalAlcista, "Señal LONG", "Señal LONG confirmada")
+alertcondition(senalBajista, "Señal SHORT", "Señal SHORT confirmada")

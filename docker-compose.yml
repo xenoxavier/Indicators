@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tradingview-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingview-indicator-mcp
+    volumes:
+      # Mount the current directory to access indicator files
+      - .:/app/indicators:ro
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    working_dir: /app/indicators

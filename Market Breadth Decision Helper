@@ -1,0 +1,348 @@
+Market Breadth Decision Helper
+
+
+
+//@version=6
+indicator("Market Breadth Decision Helper", overlay = true, max_labels_count = 50, max_lines_count = 50)
+
+// === Inputs ===
+// Symbols
+voldSymbol        = input.symbol("USI:VOLD",  "Volume Difference (VOLD)")
+voldNasdaqSymbol  = input.symbol("USI:VOLDQ", "NASDAQ Volume Difference (VOLDQ)")
+addNyseSymbol     = input.symbol("USI:ADD",   "NYSE Advance/Decline")
+addNasdaqSymbol   = input.symbol("USI:ADDQ",  "NASDAQ Advance/Decline")
+tickSymbol        = input.symbol("USI:TICK",  "NYSE Tick Index")
+
+// Thresholds (defaults based on framework, user-tunable)
+voldNeutralBand  = input.float(50e9,  "VOLD Neutral Band (±)",   step = 1e9)
+voldStrongBand   = input.float(150e9, "VOLD Strong Band (±)",    step = 1e9)
+voldExtremeBand  = input.float(300e9, "VOLD Extreme Band (±)",   step = 1e9)
+voldPanicBand    = input.float(500e9, "VOLD Panic Band (±)",     step = 1e9)
+
+addNeutralBand   = input.int(400,     "ADD Neutral Band (±)",    step = 50)
+addStrongBand    = input.int(900,     "ADD Strong Band (±)",     step = 50)
+addExtremeBand   = input.int(1400,    "ADD Extreme Band (±)",    step = 50)
+addPanicBand     = input.int(1800,    "ADD Panic Band (±)",      step = 50)
+
+tickNeutralBand  = input.int(200,     "TICK Neutral Band (±)",   step = 25)
+tickStrongBand   = input.int(500,     "TICK Strong Band (±)",    step = 25)
+tickExtremeBand  = input.int(800,     "TICK Extreme Band (±)",   step = 25)
+tickPanicBand    = input.int(1000,    "TICK Panic Band (±)",     step = 25)
+
+addDivergenceMin = input.int(500,     "ADD Divergence Min |Δ|",  step = 50)
+
+// Dashboard bias (manual input from external dashboard)
+dashboardBias    = input.string("Neutral", "Dashboard Bias", options = ["Bullish", "Bearish", "Neutral"])
+
+// Visuals
+showTable        = input.bool(true,  "Show Breadth Table")
+// Toggle for showing the summary label (candle annotation)
+showLabel        = input.bool(true,  "Show Summary Label")
+
+// Table position selector. Allows moving the table to different corners of the chart.
+tablePositionInput = input.string("top_right", "Table Position", options = ["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"])
+
+
+// Colour customization for the table and label.  Users can override these to match their chart themes.
+tableTextColor      = input.color(color.white, "Table Text Colour")
+tableHeaderColor    = input.color(color.gray, "Table Header Background")
+tableBullColor      = input.color(color.green, "Bullish Base Colour")
+tableBearColor      = input.color(color.red,   "Bearish Base Colour")
+tableNeutralColor   = input.color(color.gray,  "Neutral Base Colour")
+labelTextColor      = input.color(color.white, "Label Text Colour")
+
+// Label positioning.  Choose horizontal (left/right) and vertical (price-based) placement.
+labelXPositionInput = input.string("Right", "Label Horizontal Position", options = ["Left", "Right"])
+labelYPositionInput = input.string("High", "Label Vertical Position", options = ["High", "Low", "Close", "Middle"])
+
+// Convert the table position input into the appropriate `position.*` enumeration.  This expression is
+// collapsed onto a single line to avoid v6 line‑continuation issues.  Each branch handles one of the
+// possible string values and falls back to bottom_right for any unexpected value.
+tablePosition = tablePositionInput == "top_left" ? position.top_left : tablePositionInput == "top_center" ? position.top_center : tablePositionInput == "top_right" ? position.top_right : tablePositionInput == "middle_left" ? position.middle_left : tablePositionInput == "middle_center" ? position.middle_center : tablePositionInput == "middle_right" ? position.middle_right : tablePositionInput == "bottom_left" ? position.bottom_left : tablePositionInput == "bottom_center" ? position.bottom_center : position.bottom_right
+
+// JSON Export
+enableJsonExport = input.bool(false, "Enable JSON Export (alert)")
+
+// === Data Series ===
+vold       = request.security(voldSymbol,       timeframe.period, close)
+voldNasdaq = request.security(voldNasdaqSymbol, timeframe.period, close)
+addNyse    = request.security(addNyseSymbol,    timeframe.period, close)
+addNasdaq  = request.security(addNasdaqSymbol,  timeframe.period, close)
+tick       = request.security(tickSymbol,       timeframe.period, close)
+
+// === Intraday Day High/Low tracking ===
+isNewDay = ta.change(time("D")) != 0
+var float dayHigh = na
+var float dayLow  = na
+
+if isNewDay
+    dayHigh := high
+    dayLow  := low
+else
+    dayHigh := na(dayHigh) ? high : math.max(dayHigh, high)
+    dayLow  := na(dayLow)  ? low  : math.min(dayLow, low)
+
+// === Tier calculations (no functions) ===
+// VOLD
+voldAbs  = math.abs(vold)
+voldSign = vold > 0 ? 1 : vold < 0 ? -1 : 0
+voldTier = 0
+if voldSign != 0
+    voldMag = voldAbs < voldNeutralBand ? 1 : voldAbs < voldStrongBand ? 1 : voldAbs < voldExtremeBand ? 2 : voldAbs < voldPanicBand ? 3 : 4
+    voldTier := voldSign * voldMag
+
+// NASDAQ VOLD
+voldNasdaqAbs  = math.abs(voldNasdaq)
+voldNasdaqSign = voldNasdaq > 0 ? 1 : voldNasdaq < 0 ? -1 : 0
+voldNasdaqTier = 0
+if voldNasdaqSign != 0
+    voldNasdaqMag = voldNasdaqAbs < voldNeutralBand ? 1 : voldNasdaqAbs < voldStrongBand ? 1 : voldNasdaqAbs < voldExtremeBand ? 2 : voldNasdaqAbs < voldPanicBand ? 3 : 4
+    voldNasdaqTier := voldNasdaqSign * voldNasdaqMag
+
+// NYSE ADD
+addNyseAbs  = math.abs(addNyse)
+addNyseSign = addNyse > 0 ? 1 : addNyse < 0 ? -1 : 0
+addNyseTier = 0
+if addNyseSign != 0
+    addNyseMag = addNyseAbs < addNeutralBand ? 1 : addNyseAbs < addStrongBand ? 1 : addNyseAbs < addExtremeBand ? 2 : addNyseAbs < addPanicBand ? 3 : 4
+    addNyseTier := addNyseSign * addNyseMag
+
+// NASDAQ ADD
+addNasdaqAbs  = math.abs(addNasdaq)
+addNasdaqSign = addNasdaq > 0 ? 1 : addNasdaq < 0 ? -1 : 0
+addNasdaqTier = 0
+if addNasdaqSign != 0
+    addNasdaqMag = addNasdaqAbs < addNeutralBand ? 1 : addNasdaqAbs < addStrongBand ? 1 : addNasdaqAbs < addExtremeBand ? 2 : addNasdaqAbs < addPanicBand ? 3 : 4
+    addNasdaqTier := addNasdaqSign * addNasdaqMag
+
+// TICK
+tickAbs  = math.abs(tick)
+tickSign = tick > 0 ? 1 : tick < 0 ? -1 : 0
+tickTier = 0
+if tickSign != 0
+    tickMag = tickAbs < tickNeutralBand ? 1 : tickAbs < tickStrongBand ? 1 : tickAbs < tickExtremeBand ? 2 : tickAbs < tickPanicBand ? 3 : 4
+    tickTier := tickSign * tickMag
+
+// === Divergence & Override Flags ===
+nyseSignForDiv   = addNyse   >  addNeutralBand  ? 1 : addNyse   < -addNeutralBand  ? -1 : 0
+nasdaqSignForDiv = addNasdaq >  addNeutralBand  ? 1 : addNasdaq < -addNeutralBand  ? -1 : 0
+addDiff          = addNyse - addNasdaq
+
+isAddDivergence    = nyseSignForDiv != 0 and nasdaqSignForDiv != 0 and nyseSignForDiv != nasdaqSignForDiv and math.abs(addDiff) >= addDivergenceMin
+isVoldOverrideBull = voldTier >= 2
+isVoldOverrideBear = voldTier <= -2
+isVoldPanic        = math.abs(vold)    >= voldPanicBand
+isAddPanic         = math.abs(addNyse) >= addPanicBand
+
+// === Confirmation Booleans ===
+voldBullConfirm      = vold >  voldNeutralBand
+voldBearConfirm      = vold < -voldNeutralBand
+addNyseBullConfirm   = addNyse >  addNeutralBand
+addNyseBearConfirm   = addNyse < -addNeutralBand
+addNasdaqBullConfirm = addNasdaq >  addNeutralBand
+addNasdaqBearConfirm = addNasdaq < -addNeutralBand
+tickBullConfirm      = tick >  tickNeutralBand
+tickBearConfirm      = tick < -tickNeutralBand
+
+// === Weighted Breadth Points ===
+bullPoints = (voldBullConfirm ? 2 : 0) + (addNyseBullConfirm ? 2 : 0) + (addNasdaqBullConfirm ? 1 : 0) + (tickBullConfirm ? 1 : 0)
+bearPoints = (voldBearConfirm ? 2 : 0) + (addNyseBearConfirm ? 2 : 0) + (addNasdaqBearConfirm ? 1 : 0) + (tickBearConfirm ? 1 : 0)
+
+// Breadth multipliers (inline instead of function)
+bullBreadthMult = bullPoints >= 3 ? 1.5 : bullPoints == 2 ? 1.0 : bullPoints == 1 ? 0.5 : 0.0
+bearBreadthMult = bearPoints >= 3 ? 1.5 : bearPoints == 2 ? 1.0 : bearPoints == 1 ? 0.5 : 0.0
+
+// === Breadth Mode & Bias ===
+// Compose the mode on a single line to avoid any line‑continuation errors.
+breadthMode = isVoldPanic or isAddPanic ? "PANIC_NO_TRADE" : isAddDivergence ? "DIVERGENCE_SCALP_ONLY" : isVoldOverrideBull ? "VOLD_OVERRIDE_BULL" : isVoldOverrideBear ? "VOLD_OVERRIDE_BEAR" : (bullPoints == 0 and bearPoints == 0 ? "NO_EDGE" : "NORMAL")
+// Compose the bias on a single line as well.
+breadthBias = bullPoints > bearPoints and bullPoints >= 2 ? "Bullish" : bearPoints > bullPoints and bearPoints >= 2 ? "Bearish" : "Neutral"
+
+// === Helpers for tier text/colors (inline) ===
+tierTextVold        = voldTier == 0 ? "Neutral" : voldTier > 0 ? "Bull(" + str.tostring(voldTier) + ")" : "Bear(" + str.tostring(-voldTier) + ")"
+tierTextVoldNasdaq  = voldNasdaqTier == 0 ? "Neutral" : voldNasdaqTier > 0 ? "Bull(" + str.tostring(voldNasdaqTier) + ")" : "Bear(" + str.tostring(-voldNasdaqTier) + ")"
+tierTextAddNyse     = addNyseTier == 0 ? "Neutral" : addNyseTier > 0 ? "Bull(" + str.tostring(addNyseTier) + ")" : "Bear(" + str.tostring(-addNyseTier) + ")"
+tierTextAddNasdaq   = addNasdaqTier == 0 ? "Neutral" : addNasdaqTier > 0 ? "Bull(" + str.tostring(addNasdaqTier) + ")" : "Bear(" + str.tostring(-addNasdaqTier) + ")"
+tierTextTick        = tickTier == 0 ? "Neutral" : tickTier > 0 ? "Bull(" + str.tostring(tickTier) + ")" : "Bear(" + str.tostring(-tickTier) + ")"
+
+// Colour assignments for each tier.  Use custom base colours and lighten them by an amount that depends on the tier magnitude.
+// Colour assignments for each tier.  Use custom base colours and lighten them by an amount that depends on the tier magnitude.
+// Each assignment is written on a single line to avoid v6 line‑continuation issues.
+tierColorVold        = voldTier == 0 ? color.new(tableNeutralColor, 70) : voldTier > 0 ? color.new(tableBullColor, 60 - voldTier * 10) : color.new(tableBearColor, 60 - (-voldTier) * 10)
+tierColorVoldNasdaq  = voldNasdaqTier == 0 ? color.new(tableNeutralColor, 70) : voldNasdaqTier > 0 ? color.new(tableBullColor, 60 - voldNasdaqTier * 10) : color.new(tableBearColor, 60 - (-voldNasdaqTier) * 10)
+tierColorAddNyse     = addNyseTier == 0 ? color.new(tableNeutralColor, 70) : addNyseTier > 0 ? color.new(tableBullColor, 60 - addNyseTier * 10) : color.new(tableBearColor, 60 - (-addNyseTier) * 10)
+tierColorAddNasdaq   = addNasdaqTier == 0 ? color.new(tableNeutralColor, 70) : addNasdaqTier > 0 ? color.new(tableBullColor, 60 - addNasdaqTier * 10) : color.new(tableBearColor, 60 - (-addNasdaqTier) * 10)
+tierColorTick        = tickTier == 0 ? color.new(tableNeutralColor, 70) : tickTier > 0 ? color.new(tableBullColor, 60 - tickTier * 10) : color.new(tableBearColor, 60 - (-tickTier) * 10)
+
+// Tier descriptors for webhook and dashboard clarity
+voldTierDesc       = voldTier == 0 ? "NEUTRAL" : math.abs(voldTier) == 1 ? "MILD" : math.abs(voldTier) == 2 ? "STRONG" : math.abs(voldTier) == 3 ? "SEVERE" : "PANIC"
+voldNasdaqTierDesc = voldNasdaqTier == 0 ? "NEUTRAL" : math.abs(voldNasdaqTier) == 1 ? "MILD" : math.abs(voldNasdaqTier) == 2 ? "STRONG" : math.abs(voldNasdaqTier) == 3 ? "SEVERE" : "PANIC"
+addNyseTierDesc    = addNyseTier == 0 ? "NEUTRAL" : math.abs(addNyseTier) == 1 ? "MILD" : math.abs(addNyseTier) == 2 ? "STRONG" : math.abs(addNyseTier) == 3 ? "SEVERE" : "PANIC"
+addNasdaqTierDesc  = addNasdaqTier == 0 ? "NEUTRAL" : math.abs(addNasdaqTier) == 1 ? "MILD" : math.abs(addNasdaqTier) == 2 ? "STRONG" : math.abs(addNasdaqTier) == 3 ? "SEVERE" : "PANIC"
+tickTierDesc       = tickTier == 0 ? "NEUTRAL" : math.abs(tickTier) == 1 ? "MILD" : math.abs(tickTier) == 2 ? "STRONG" : math.abs(tickTier) == 3 ? "SEVERE" : "PANIC"
+
+// === Table UI ===
+var table breadthTable = na
+if showTable and barstate.islast
+    if na(breadthTable)
+        // Create the table at the user-selected position
+        breadthTable := table.new(tablePosition, 7, 10, border_width = 1)
+    // Clear table
+    for r = 0 to 9
+        for c = 0 to 6
+            table.cell(breadthTable, c, r, "")
+    // Header
+    // Header row uses the user-defined header background and text colours
+    table.cell(breadthTable, 0, 0, "Metric", text_color = tableTextColor, bgcolor = tableHeaderColor)
+    table.cell(breadthTable, 1, 0, "Value",         text_color = tableTextColor, bgcolor = tableHeaderColor)
+    table.cell(breadthTable, 2, 0, "Tier (+/-)",    text_color = tableTextColor, bgcolor = tableHeaderColor)
+    table.cell(breadthTable, 3, 0, "Score",  text_color = tableTextColor, bgcolor = tableHeaderColor)
+    table.cell(breadthTable, 4, 0, "BullPts",text_color = tableTextColor, bgcolor = tableHeaderColor)
+    table.cell(breadthTable, 5, 0, "BearPts",text_color = tableTextColor, bgcolor = tableHeaderColor)
+    table.cell(breadthTable, 6, 0, "Notes",  text_color = tableTextColor, bgcolor = tableHeaderColor)
+    // Row 1: VOLD
+    row = 1
+    table.cell(breadthTable, 0, row, "VOLD",       text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, str.tostring(vold),          text_color = tableTextColor)
+    table.cell(breadthTable, 2, row, tierTextVold,                text_color = tableTextColor, bgcolor = tierColorVold)
+    table.cell(breadthTable, 3, row, str.tostring(voldTier),      text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, voldBullConfirm ? "2" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, voldBearConfirm ? "2" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, isVoldPanic ? "PANIC" : isVoldOverrideBull or isVoldOverrideBear ? "OVERRIDE" : "", text_color = tableTextColor)
+    // Row 2: VOLDQ
+    row += 1
+    table.cell(breadthTable, 0, row, "VOLDQ",      text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, str.tostring(voldNasdaq),        text_color = tableTextColor)
+    table.cell(breadthTable, 2, row, tierTextVoldNasdaq,              text_color = tableTextColor, bgcolor = tierColorVoldNasdaq)
+    table.cell(breadthTable, 3, row, str.tostring(voldNasdaqTier),    text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, "0", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, "0", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, "", text_color = tableTextColor)
+    // Row 3: NYSE ADD
+    row += 1
+    table.cell(breadthTable, 0, row, "ADD NYSE",                 text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, str.tostring(addNyse),        text_color = tableTextColor)
+    table.cell(breadthTable, 2, row, tierTextAddNyse,             text_color = tableTextColor, bgcolor = tierColorAddNyse)
+    table.cell(breadthTable, 3, row, str.tostring(addNyseTier),    text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, addNyseBullConfirm ? "2" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, addNyseBearConfirm ? "2" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, isAddPanic ? "PANIC" : "", text_color = tableTextColor)
+    // Row 4: NASDAQ ADD
+    row += 1
+    table.cell(breadthTable, 0, row, "ADD NASDAQ",                 text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, str.tostring(addNasdaq),        text_color = tableTextColor)
+    table.cell(breadthTable, 2, row, tierTextAddNasdaq,             text_color = tableTextColor, bgcolor = tierColorAddNasdaq)
+    table.cell(breadthTable, 3, row, str.tostring(addNasdaqTier),    text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, addNasdaqBullConfirm ? "1" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, addNasdaqBearConfirm ? "1" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, isAddDivergence ? "DIVERGENCE" : "", text_color = tableTextColor)
+    // Row 5: TICK
+    row += 1
+    table.cell(breadthTable, 0, row, "TICK",              text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, str.tostring(tick),    text_color = tableTextColor)
+    table.cell(breadthTable, 2, row, tierTextTick,          text_color = tableTextColor, bgcolor = tierColorTick)
+    table.cell(breadthTable, 3, row, str.tostring(tickTier), text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, tickBullConfirm ? "1" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, tickBearConfirm ? "1" : "0", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, "", text_color = tableTextColor)
+    // Row 6: Long side summary
+    row += 1
+    table.cell(breadthTable, 0, row, "LONG", text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, "Pts: " + str.tostring(bullPoints), text_color = tableTextColor)
+    // Consolidate the cell call into a single line to avoid line‑continuation errors
+    table.cell(breadthTable, 2, row, "Mult: " + str.tostring(bullBreadthMult), text_color = tableTextColor, bgcolor = bullPoints >= 3 ? color.new(tableBullColor, 70) : color.new(tableNeutralColor, 80))
+    table.cell(breadthTable, 3, row, "", text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, "", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, "", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, "", text_color = tableTextColor)
+    // Row 7: Short side summary
+    row += 1
+    table.cell(breadthTable, 0, row, "SHORT", text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, "Pts: " + str.tostring(bearPoints), text_color = tableTextColor)
+    // Consolidate the cell call into a single line to avoid line‑continuation errors
+    table.cell(breadthTable, 2, row, "Mult: " + str.tostring(bearBreadthMult), text_color = tableTextColor, bgcolor = bearPoints >= 3 ? color.new(tableBearColor, 70) : color.new(tableNeutralColor, 80))
+    table.cell(breadthTable, 3, row, "", text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, "", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, "", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, "", text_color = tableTextColor)
+    // Row 8: Mode & Bias
+    row += 1
+    table.cell(breadthTable, 0, row, "MODE", text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, breadthMode, text_color = tableTextColor)
+    table.cell(breadthTable, 2, row, "Bias: " + breadthBias, text_color = tableTextColor)
+    table.cell(breadthTable, 3, row, "Dash: " + dashboardBias, text_color = tableTextColor)
+    // Row 9: Tier Key
+    row += 1
+    table.cell(breadthTable, 0, row, "Tier Key", text_color = tableTextColor)
+    table.cell(breadthTable, 1, row, "+ Bull / - Bear", text_color = tableTextColor)
+    table.cell(breadthTable, 2, row, "0=Neutral", text_color = tableTextColor)
+    table.cell(breadthTable, 3, row, "1=Mild", text_color = tableTextColor)
+    table.cell(breadthTable, 4, row, "2=Strong", text_color = tableTextColor)
+    table.cell(breadthTable, 5, row, "3=Severe", text_color = tableTextColor)
+    table.cell(breadthTable, 6, row, "4=Panic", text_color = tableTextColor)
+
+// === Labels ===
+var label summaryLabel = na
+// Draw the summary label when enabled.  The label can be positioned horizontally (left/right) and vertically (High/Low/Close/Middle).
+if showLabel and barstate.islast
+    // Delete previous label if it exists
+    if not na(summaryLabel)
+        label.delete(summaryLabel)
+    // Determine the label's background colour using the custom base colours.  Panic uses the bear colour; divergence uses orange; overrides use bull/bear colours.  Condense onto one line to satisfy v6 line‑continuation rules.
+    labelBgColor = breadthMode == "PANIC_NO_TRADE" ? color.new(tableBearColor, 30) : breadthMode == "DIVERGENCE_SCALP_ONLY" ? color.new(color.orange, 30) : breadthMode == "VOLD_OVERRIDE_BULL" ? color.new(tableBullColor, 40) : breadthMode == "VOLD_OVERRIDE_BEAR" ? color.new(tableBearColor, 40) : color.new(tableNeutralColor, 80)
+    // Compose the text content on a single line.  Use explicit newline characters to separate lines.
+    labelTxt = "Breadth Mode: " + breadthMode + "\nBias: " + breadthBias + "\nBullPts " + str.tostring(bullPoints) + " (x" + str.tostring(bullBreadthMult) + ")" + "\nBearPts " + str.tostring(bearPoints) + " (x" + str.tostring(bearBreadthMult) + ")" + "\nDash: " + dashboardBias
+    // Determine horizontal label style
+    labelStyle = labelXPositionInput == "Right" ? label.style_label_right : label.style_label_left
+    // Determine vertical y coordinate based on the selected position
+    labelY = labelYPositionInput == "High" ? high : labelYPositionInput == "Low" ? low : labelYPositionInput == "Close" ? close : (high + low) / 2.0
+    // Place the label at the current bar index with the computed y coordinate
+    summaryLabel := label.new(bar_index, labelY, labelTxt, style = labelStyle, textcolor = labelTextColor, color = labelBgColor)
+
+// === Alerts (logic-level) ===
+alertcondition(breadthMode == "PANIC_NO_TRADE",              title = "Breadth Panic / Crash",          message = "Breadth Panic or Crash – stand down or protect positions")
+alertcondition(breadthMode == "DIVERGENCE_SCALP_ONLY",       title = "NYSE vs NASDAQ ADD Divergence",  message = "NYSE vs NASDAQ ADD divergence – scalp only, avoid trend trades")
+alertcondition(breadthBias == "Bullish" and bullPoints >= 3, title = "Strong Bullish Breadth",         message = "Strong bullish breadth alignment – long setups favored")
+alertcondition(breadthBias == "Bearish" and bearPoints >= 3, title = "Strong Bearish Breadth",         message = "Strong bearish breadth alignment – short setups favored")
+
+// === JSON Export via alert() ===
+// Static name: "MARKET_BREADTH_STATE"
+breadthJson = ""
+breadthJson := "{" 
+breadthJson += "\"name\":\"MARKET_BREADTH_STATE\""
+breadthJson += ",\"symbol\":\"" + syminfo.ticker + "\""
+breadthJson += ",\"time\":" + str.tostring(time)
+breadthJson += ",\"timeframe\":\"" + timeframe.period + "\""
+breadthJson += ",\"vold\":" + str.tostring(vold)
+breadthJson += ",\"vold_nasdaq\":" + str.tostring(voldNasdaq)
+breadthJson += ",\"add_nyse\":" + str.tostring(addNyse)
+breadthJson += ",\"add_nasdaq\":" + str.tostring(addNasdaq)
+breadthJson += ",\"tick\":" + str.tostring(tick)
+breadthJson += ",\"day_high\":" + str.tostring(dayHigh)
+breadthJson += ",\"day_low\":"  + str.tostring(dayLow)
+breadthJson += ",\"vold_tier\":" + str.tostring(voldTier)
+breadthJson += ",\"vold_nasdaq_tier\":" + str.tostring(voldNasdaqTier)
+breadthJson += ",\"add_nyse_tier\":" + str.tostring(addNyseTier)
+breadthJson += ",\"add_nasdaq_tier\":" + str.tostring(addNasdaqTier)
+breadthJson += ",\"tick_tier\":" + str.tostring(tickTier)
+breadthJson += ",\"vold_tier_desc\":\"" + voldTierDesc + "\""
+breadthJson += ",\"vold_nasdaq_tier_desc\":\"" + voldNasdaqTierDesc + "\""
+breadthJson += ",\"add_nyse_tier_desc\":\"" + addNyseTierDesc + "\""
+breadthJson += ",\"add_nasdaq_tier_desc\":\"" + addNasdaqTierDesc + "\""
+breadthJson += ",\"tick_tier_desc\":\"" + tickTierDesc + "\""
+breadthJson += ",\"bull_points\":" + str.tostring(bullPoints)
+breadthJson += ",\"bear_points\":" + str.tostring(bearPoints)
+breadthJson += ",\"bull_mult\":" + str.tostring(bullBreadthMult)
+breadthJson += ",\"bear_mult\":" + str.tostring(bearBreadthMult)
+breadthJson += ",\"is_add_divergence\":" + (isAddDivergence ? "true" : "false")
+breadthJson += ",\"is_vold_panic\":" + (isVoldPanic ? "true" : "false")
+breadthJson += ",\"is_add_panic\":" + (isAddPanic ? "true" : "false")
+breadthJson += ",\"breadth_mode\":\"" + breadthMode + "\""
+breadthJson += ",\"breadth_bias\":\"" + breadthBias + "\""
+breadthJson += ",\"dashboard_bias\":\"" + dashboardBias + "\""
+breadthJson += ",\"tier_sign_hint\":\"+ = bull, - = bear, 0 = neutral\""
+breadthJson += ",\"tier_magnitude_hint\":\"abs(tier):0=Neutral,1=Mild,2=Strong,3=Severe,4=Panic\""
+breadthJson += "}"
+
+if enableJsonExport and barstate.islast
+    alert(breadthJson, alert.freq_once_per_bar_close)

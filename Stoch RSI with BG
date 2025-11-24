@@ -1,0 +1,55 @@
+Stoch RSI with BG
+
+//@version=5
+indicator(title="StochRSI → Main Chart BG", shorttitle="StochRSI BG", overlay=true)
+
+// Timeframe input (select timeframe for Stoch RSI calculation)
+tf = input.timeframe("W", "Timeframe")
+
+// Stoch RSI params
+smoothK     = input.int(3, "K", minval=1)
+smoothD     = input.int(3, "D", minval=1)
+lengthRSI   = input.int(14, "RSI Length", minval=1)
+lengthStoch = input.int(14, "Stochastic Length", minval=1)
+src         = input(close, "RSI Source")
+
+// Compute Stoch RSI on chosen timeframe
+rsi_tf = request.security(syminfo.tickerid, tf, ta.rsi(src, lengthRSI))
+k_raw  = request.security(syminfo.tickerid, tf, ta.stoch(rsi_tf, rsi_tf, rsi_tf, lengthStoch))
+k = ta.sma(k_raw, smoothK)
+
+// Delta (trend direction of K)
+delta = k - k[1]
+
+// State machine memory
+var int last_state = 0   // -1 = last hit <20, +1 = last hit >80
+if k < 20
+    last_state := -1
+else if k > 80
+    last_state := +1
+
+// Default colors
+bgc = color.new(color.black, 100)
+
+// --- New requested logic for extremes ---
+// Soft red if above 80 AND K trending down
+softRed   = color.new(color.red,   60)
+// Soft green if below 20 AND K trending up
+softGreen = color.new(color.green, 60)
+
+if k > 80 and delta < 0
+    bgc := softRed
+else if k < 20 and delta > 0
+    bgc := softGreen
+else
+    // original behavior
+    if k < 20 or k > 80
+        bgc := color.new(color.yellow, 80)
+    else
+        bgc := last_state == -1 ? color.new(color.green, 80) : color.new(color.red, 80)
+
+// Apply background to main chart
+bgcolor(bgc)
+
+// Satisfy TradingView requirement
+plot(na, display=display.none)

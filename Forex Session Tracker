@@ -1,0 +1,253 @@
+Forex Session Tracker
+
+//@version=5
+indicator("Forex Session Tracker", overlay = true, max_bars_back = 500, max_lines_count = 500, max_boxes_count = 500)
+
+//==============================================================================
+// INPUT SETTINGS
+//==============================================================================
+
+// Tokyo Session
+tokyo_enable = input.bool(true, "Show Tokyo", group = "Tokyo Session", inline = "tok")
+tokyo_color = input.color(#e91e63, "", group = "Tokyo Session", inline = "tok")
+tokyo_time = input.session("0000-0900", "Session Time", group = "Tokyo Session")
+tokyo_highlight = input.bool(true, "Background Highlight", group = "Tokyo Session", inline = "tok_opt")
+tokyo_lines = input.bool(true, "High/Low Lines", group = "Tokyo Session", inline = "tok_opt")
+
+// London Session
+london_enable = input.bool(true, "Show London", group = "London Session", inline = "lon")
+london_color = input.color(#2196f3, "", group = "London Session", inline = "lon")
+london_time = input.session("0700-1600", "Session Time", group = "London Session")
+london_highlight = input.bool(true, "Background Highlight", group = "London Session", inline = "lon_opt")
+london_lines = input.bool(true, "High/Low Lines", group = "London Session", inline = "lon_opt")
+
+// New York Session
+newyork_enable = input.bool(true, "Show New York", group = "New York Session", inline = "ny")
+newyork_color = input.color(#ff9800, "", group = "New York Session", inline = "ny")
+newyork_time = input.session("1300-2200", "Session Time", group = "New York Session")
+newyork_highlight = input.bool(true, "Background Highlight", group = "New York Session", inline = "ny_opt")
+newyork_lines = input.bool(true, "High/Low Lines", group = "New York Session", inline = "ny_opt")
+
+// Sydney Session
+sydney_enable = input.bool(true, "Show Sydney", group = "Sydney Session", inline = "syd")
+sydney_color = input.color(#4caf50, "", group = "Sydney Session", inline = "syd")
+sydney_time = input.session("2100-0600", "Session Time", group = "Sydney Session")
+sydney_highlight = input.bool(true, "Background Highlight", group = "Sydney Session", inline = "syd_opt")
+sydney_lines = input.bool(true, "High/Low Lines", group = "Sydney Session", inline = "syd_opt")
+
+// General Settings
+timezone_offset = input.int(0, "UTC Offset (+/-)", minval = -12, maxval = 14, group = "General Settings")
+use_exchange_tz = input.bool(false, "Use Exchange Timezone", group = "General Settings")
+box_transparency = input.int(85, "Background Transparency", minval = 0, maxval = 100, group = "General Settings")
+show_labels = input.bool(true, "Show Session Labels", group = "General Settings")
+show_info_panel = input.bool(true, "Show Info Panel", group = "General Settings")
+
+// Info Panel Settings
+panel_position = input.string("Top Right", "Panel Position", options = ["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group = "Info Panel")
+panel_size = input.string("Small", "Panel Size", options = ["Tiny", "Small", "Normal", "Large"], group = "Info Panel")
+
+//==============================================================================
+// FUNCTIONS
+//==============================================================================
+
+// Get timezone string
+get_timezone() =>
+    use_exchange_tz ? syminfo.timezone : 
+      str.format("UTC{0}{1}", timezone_offset >= 0 ? "+" : "", timezone_offset)
+
+// Detect if in session
+in_session(session_time) =>
+    not na(time(timeframe.period, session_time, get_timezone()))
+
+// Track session high/low
+track_session_range(in_session, session_name, session_color, show_box, show_lines) =>
+    var float session_high = na
+    var float session_low = na
+    var int session_start = na
+    var box range_box = na
+    var label session_label = na
+    var line high_line = na
+    var line low_line = na
+    
+    // Session just started
+    if in_session and not in_session[1]
+        session_high := high
+        session_low := low
+        session_start := bar_index
+        
+        // Create background box
+        if show_box
+            range_box := box.new(bar_index, high, bar_index, low,
+              bgcolor = color.new(session_color, box_transparency),
+              border_color = color.new(session_color, 60),
+              border_width = 1)
+        
+        // Create session label
+        if show_labels
+            session_label := label.new(bar_index, high, session_name,
+              color = color.new(session_color, 80),
+              textcolor = session_color,
+              style = label.style_label_down,
+              size = size.small)
+    
+    // Session is active
+    if in_session
+        session_high := math.max(session_high, high)
+        session_low := math.min(session_low, low)
+        
+        // Update box
+        if not na(range_box) and show_box
+            box.set_top(range_box, session_high)
+            box.set_bottom(range_box, session_low)
+            box.set_right(range_box, bar_index)
+        
+        // Update label position
+        if not na(session_label) and show_labels
+            label.set_xy(session_label, int((session_start + bar_index) / 2), session_high)
+    
+    // Session just ended
+    if not in_session and in_session[1]
+        // Draw high/low lines for completed session
+        if show_lines and not na(session_high)
+            high_line := line.new(session_start, session_high, bar_index, session_high,
+              color = session_color,
+              style = line.style_solid,
+              width = 1)
+            
+            low_line := line.new(session_start, session_low, bar_index, session_low,
+              color = session_color,
+              style = line.style_solid,
+              width = 1)
+    
+    [session_high, session_low]
+
+//==============================================================================
+// SESSION DETECTION
+//==============================================================================
+
+tokyo_active = tokyo_enable and in_session(tokyo_time)
+london_active = london_enable and in_session(london_time)
+newyork_active = newyork_enable and in_session(newyork_time)
+sydney_active = sydney_enable and in_session(sydney_time)
+
+//==============================================================================
+// SESSION TRACKING
+//==============================================================================
+
+if tokyo_enable
+    track_session_range(tokyo_active, "Tokyo", tokyo_color, tokyo_highlight, tokyo_lines)
+
+if london_enable
+    track_session_range(london_active, "London", london_color, london_highlight, london_lines)
+
+if newyork_enable
+    track_session_range(newyork_active, "New York", newyork_color, newyork_highlight, newyork_lines)
+
+if sydney_enable
+    track_session_range(sydney_active, "Sydney", sydney_color, sydney_highlight, sydney_lines)
+
+//==============================================================================
+// INFO PANEL
+//==============================================================================
+
+var table info_table = na
+
+if barstate.isfirst and show_info_panel
+    table_pos = panel_position == "Top Left" ? position.top_left :
+      panel_position == "Top Right" ? position.top_right :
+      panel_position == "Bottom Left" ? position.bottom_left :
+      position.bottom_right
+    
+    table_txt_size = panel_size == "Tiny" ? size.tiny :
+      panel_size == "Small" ? size.small :
+      panel_size == "Normal" ? size.normal :
+      size.large
+    
+    info_table := table.new(table_pos, 2, 6,
+      bgcolor = color.new(#1a1a1a, 10),
+      border_color = color.new(#404040, 0),
+      border_width = 2,
+      frame_color = color.new(#404040, 0),
+      frame_width = 2)
+    
+    // Header
+    table.cell(info_table, 0, 0, "FX Sessions", 
+      text_color = color.white,
+      text_size = table_txt_size,
+      bgcolor = color.new(#2962ff, 20))
+    table.cell(info_table, 1, 0, "Status",
+      text_color = color.white,
+      text_size = table_txt_size,
+      bgcolor = color.new(#2962ff, 20))
+    
+    // Session rows
+    table.cell(info_table, 0, 1, "Tokyo",
+      text_color = tokyo_color,
+      text_size = table_txt_size)
+    
+    table.cell(info_table, 0, 2, "London",
+      text_color = london_color,
+      text_size = table_txt_size)
+    
+    table.cell(info_table, 0, 3, "New York",
+      text_color = newyork_color,
+      text_size = table_txt_size)
+    
+    table.cell(info_table, 0, 4, "Sydney",
+      text_color = sydney_color,
+      text_size = table_txt_size)
+    
+    // Timezone info
+    table.cell(info_table, 0, 5, "Timezone: " + get_timezone(),
+      text_color = color.gray,
+      text_size = size.tiny)
+    table.merge_cells(info_table, 0, 5, 1, 5)
+
+// Update panel status
+if barstate.islast and show_info_panel
+    table_txt_size = panel_size == "Tiny" ? size.tiny :
+      panel_size == "Small" ? size.small :
+      panel_size == "Normal" ? size.normal :
+      size.large
+    
+    // Tokyo status
+    table.cell(info_table, 1, 1, tokyo_active ? "● ACTIVE" : "○ Closed",
+      text_color = tokyo_active ? #00ff00 : color.gray,
+      bgcolor = tokyo_active ? color.new(#00ff00, 90) : na,
+      text_size = table_txt_size)
+    
+    // London status
+    table.cell(info_table, 1, 2, london_active ? "● ACTIVE" : "○ Closed",
+      text_color = london_active ? #00ff00 : color.gray,
+      bgcolor = london_active ? color.new(#00ff00, 90) : na,
+      text_size = table_txt_size)
+    
+    // New York status
+    table.cell(info_table, 1, 3, newyork_active ? "● ACTIVE" : "○ Closed",
+      text_color = newyork_active ? #00ff00 : color.gray,
+      bgcolor = newyork_active ? color.new(#00ff00, 90) : na,
+      text_size = table_txt_size)
+    
+    // Sydney status
+    table.cell(info_table, 1, 4, sydney_active ? "● ACTIVE" : "○ Closed",
+      text_color = sydney_active ? #00ff00 : color.gray,
+      bgcolor = sydney_active ? color.new(#00ff00, 90) : na,
+      text_size = table_txt_size)
+
+//==============================================================================
+// BACKGROUND COLORING (OPTIONAL)
+//==============================================================================
+
+bgcolor(tokyo_active and tokyo_highlight ? color.new(tokyo_color, 95) : na, title = "Tokyo BG")
+bgcolor(london_active and london_highlight ? color.new(london_color, 95) : na, title = "London BG")
+bgcolor(newyork_active and newyork_highlight ? color.new(newyork_color, 95) : na, title = "New York BG")
+bgcolor(sydney_active and sydney_highlight ? color.new(sydney_color, 95) : na, title = "Sydney BG")
+
+//==============================================================================
+// ALERTS
+//==============================================================================
+
+alertcondition(tokyo_active and not tokyo_active[1], "Tokyo Session Started", "Tokyo forex session has started")
+alertcondition(london_active and not london_active[1], "London Session Started", "London forex session has started")
+alertcondition(newyork_active and not newyork_active[1], "New York Session Started", "New York forex session has started")
+alertcondition(sydney_active and not sydney_active[1], "Sydney Session Started", "Sydney forex session has started")

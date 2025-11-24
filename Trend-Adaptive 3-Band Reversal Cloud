@@ -1,0 +1,70 @@
+Trend-Adaptive 3-Band Reversal Cloud
+
+
+
+//@version=6
+indicator("Trend-Adaptive 3-Band Reversal Cloud", overlay=true, max_bars_back=300)
+
+// ==== Inputs ====
+ema1_len   = input.int(14, "Fast EMA", minval=2)
+ema2_len   = input.int(34, "Slow EMA", minval=3)
+atr_len    = input.int(21, "ATR Period", minval=2)
+low_mult   = input.float(1.5, "Lower Band Mult", minval=0.1)
+mid_mult   = input.float(0.75, "Middle Band Mult", minval=0.1)
+high_mult  = input.float(2.0, "Upper Band Mult", minval=0.1)
+rsi_len    = input.int(14, "RSI Length", minval=2)
+rsi_ob     = input.int(70, "RSI Overbought", minval=50, maxval=100)
+rsi_os     = input.int(30, "RSI Oversold", minval=0, maxval=50)
+showConfluence = input.bool(true, "Highlight RSI context")
+
+// ==== Trend Logic ====
+ema1 = ta.ema(close, ema1_len)
+ema2 = ta.ema(close, ema2_len)
+trendUp = ema1 > ema2
+trendDn = ema1 < ema2
+baseline = (ema1 + ema2)/2
+
+// ==== ATR-based Bands ====
+atr = ta.atr(atr_len)
+upper_outer = baseline + high_mult * atr
+upper_inner = baseline + mid_mult * atr
+lower_outer = baseline - high_mult * atr
+lower_inner = baseline - mid_mult * atr
+
+// ==== RSI Context ====
+rsi = ta.rsi(close, rsi_len)
+
+// ==== PLOT CLOUD BOUNDARIES & FILL ====
+color_mid_cloud = color.new(color.gray, 87)
+color_upper_cloud = color.new(trendUp ? color.red : color.green, 81)
+color_lower_cloud = color.new(trendUp ? color.green : color.red, 81)
+color_conf = color.new(color.purple, 56)
+
+p_upper_outer = plot(upper_outer, color=color_upper_cloud, linewidth=1, title="Upper Outer Cloud Boundary")
+p_upper_inner = plot(upper_inner, color=color_upper_cloud, linewidth=1, title="Upper Inner Cloud Boundary")
+p_lower_inner = plot(lower_inner, color=color_lower_cloud, linewidth=1, title="Lower Inner Cloud Boundary")
+p_lower_outer = plot(lower_outer, color=color_lower_cloud, linewidth=1, title="Lower Outer Cloud Boundary")
+p_baseline    = plot(baseline, color=color.new(color.blue, 40), linewidth=2, title="Trend Baseline", style=plot.style_line)
+
+fill(p_upper_inner, p_lower_inner, color=color_mid_cloud, title="Fair Value Cloud")
+fill(p_upper_outer, p_upper_inner, color=color_upper_cloud, title="Possible Exhaustion Area")
+fill(p_lower_inner, p_lower_outer, color=color_lower_cloud, title="Potential Deep Pullback Zone")
+
+// === Confluence Highlight ===
+upper_conf = (trendUp and rsi > rsi_ob) or (trendDn and rsi < rsi_os)
+lower_conf = (trendUp and rsi < rsi_os) or (trendDn and rsi > rsi_ob)
+
+fill(p_upper_outer, p_upper_inner, color=showConfluence and upper_conf ? color_conf : na, title="Upper Confluence")
+fill(p_lower_outer, p_lower_inner, color=showConfluence and lower_conf ? color_conf : na, title="Lower Confluence")
+
+// === Optional readable labels at last bar ===
+if barstate.islast
+    label.new(bar_index, lower_outer, "Deep Pullback Zone", yloc=yloc.price, color=color_lower_cloud, style=label.style_label_down, size=size.small, textcolor=color.black)
+    label.new(bar_index, baseline, "Balanced / Fair Value", yloc=yloc.price, color=color_mid_cloud, style=label.style_label_left, size=size.small, textcolor=color.black)
+    label.new(bar_index, upper_outer, "Possible Exhaustion", yloc=yloc.price, color=color_upper_cloud, style=label.style_label_up, size=size.small, textcolor=color.black)
+
+// === Plot RSI diamonds on clouds (only when true, tiny size) ===
+plotshape(rsi > rsi_ob ? upper_outer : na, title="RSI Overbought", location=location.absolute, style=shape.diamond, size=size.tiny, color=color.red, offset=0)
+plotshape(rsi < rsi_os ? lower_outer : na, title="RSI Oversold", location=location.absolute, style=shape.diamond, size=size.tiny, color=color.lime, offset=0)
+
+// Note: All logic descriptive and context only, strictly historical bars, non-repainting, and fully TradingView house-rule compliant.

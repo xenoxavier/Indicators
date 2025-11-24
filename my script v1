@@ -1,0 +1,472 @@
+//@version=6
+indicator("Ultimate MACD Suite - Pro Edition", overlay=false)
+
+// =========================================================
+// ======================= INPUTS ==========================
+// =========================================================
+
+// MACD Settings
+fastLength     = input.int(12, "Fast Length", minval=1, group="MACD Settings")
+slowLength     = input.int(26, "Slow Length", minval=1, group="MACD Settings")
+signalLength   = input.int(9, "Signal Smoothing", minval=1, group="MACD Settings")
+source         = input.source(close, "Source", group="MACD Settings")
+
+// Basic Filters
+minMacdValue   = input.float(10.0, "Minimum MACD Value", group="Basic Filters")
+minHistChange  = input.float(5.0, "Minimum Histogram Change", group="Basic Filters")
+confirmBars    = input.int(2, "Confirmation Bars", minval=1, maxval=5, group="Basic Filters")
+
+// Extreme Signal Detection
+extremeLookback = input.int(10, "Extreme Detection Lookback", minval=3, maxval=50, group="Extreme Signals", tooltip="Periods to look back for highest/lowest MACD")
+
+// RSI Filter
+useRsiFilter    = input.bool(true, "Use RSI Filter", group="RSI Filter")
+rsiLength       = input.int(14, "RSI Length", minval=1, group="RSI Filter")
+rsiOverbought   = input.float(70, "RSI Overbought", minval=50, maxval=100, group="RSI Filter")
+rsiOversold     = input.float(30, "RSI Oversold", minval=0, maxval=50, group="RSI Filter")
+
+// Volume Filter
+useVolumeFilter  = input.bool(true, "Use Volume Filter", group="Volume Filter")
+volumeMultiplier = input.float(1.2, "Volume Multiplier (vs MA)", minval=1.0, group="Volume Filter")
+volumeMaLength   = input.int(20, "Volume MA Length", minval=1, group="Volume Filter")
+
+// Trend Filter (EMA)
+useTrendFilter = input.bool(true, "Use Trend Filter", group="Trend Filter")
+fastEma        = input.int(50, "Fast EMA", minval=1, group="Trend Filter")
+slowEma        = input.int(200, "Slow EMA", minval=1, group="Trend Filter")
+
+// ADX Filter
+useAdxFilter  = input.bool(true, "Use ADX Filter", group="ADX Filter")
+adxLength     = input.int(14, "ADX Length", minval=1, group="ADX Filter")
+adxThreshold  = input.float(25, "ADX Threshold", minval=0, group="ADX Filter")
+
+// ATR Filter
+useAtrFilter  = input.bool(true, "Use ATR Filter", group="ATR Filter")
+atrLength     = input.int(14, "ATR Length", minval=1, group="ATR Filter")
+atrMultiplier = input.float(1.5, "ATR Multiplier for Volatility", minval=0.5, group="ATR Filter")
+
+// Stochastic Filter
+useStochFilter   = input.bool(true, "Use Stochastic Filter", group="Stochastic Filter")
+stochLength      = input.int(14, "Stochastic Length", minval=1, group="Stochastic Filter")
+stochSmooth      = input.int(3, "Stochastic Smooth", minval=1, group="Stochastic Filter")
+stochOverbought  = input.float(80, "Stoch Overbought", minval=50, maxval=100, group="Stochastic Filter")
+stochOversold    = input.float(20, "Stoch Oversold", minval=0, maxval=50, group="Stochastic Filter")
+
+// Multi-Timeframe Filter
+useMtfFilter    = input.bool(true, "Use Multi-Timeframe Filter", group="MTF Filter")
+higherTimeframe = input.timeframe("240", "Higher Timeframe", group="MTF Filter")
+
+// Price Action Filter
+usePriceActionFilter = input.bool(true, "Use Price Action Confirmation", group="Price Action")
+
+// Pivot lookback for divergences
+pivotLookback = 5
+
+// =========================================================
+// ================== CORE CALCULATIONS ====================
+// =========================================================
+
+// MACD
+[macdLine, signalLine, histLine] = ta.macd(source, fastLength, slowLength, signalLength)
+
+// Extreme MACD high/low detection
+macdHighest   = ta.highest(macdLine, extremeLookback)
+isAtMacdHigh  = macdLine == macdHighest and macdLine == ta.highest(macdLine, extremeLookback)[extremeLookback / 2]
+
+macdLowest    = ta.lowest(macdLine, extremeLookback)
+isAtMacdLow   = macdLine == macdLowest and macdLine == ta.lowest(macdLine, extremeLookback)[extremeLookback / 2]
+
+macdTurningDown = macdLine < macdLine[1] and macdLine[1] >= macdLine[2]
+macdTurningUp   = macdLine > macdLine[1] and macdLine[1] <= macdLine[2]
+
+extremeSellSignal = (isAtMacdHigh or macdLine == ta.highest(macdLine, extremeLookback)) and macdTurningDown and macdLine > 0
+extremeBuySignal  = (isAtMacdLow or macdLine == ta.lowest(macdLine, extremeLookback))  and macdTurningUp   and macdLine < 0
+
+// RSI
+rsi = ta.rsi(close, rsiLength)
+rsiOversoldCondition   = rsi < rsiOversold
+rsiOverboughtCondition = rsi > rsiOverbought
+
+// Volume
+volumeMa       = ta.sma(volume, volumeMaLength)
+volumeCondition = volume > volumeMa * volumeMultiplier
+
+// Trend (EMA)
+ema50   = ta.ema(close, fastEma)
+ema200  = ta.ema(close, slowEma)
+uptrend = ema50 > ema200
+downtrend = ema50 < ema200
+
+// ADX
+[diPlus, diMinus, adx] = ta.dmi(adxLength, adxLength)
+strongTrend = adx > adxThreshold
+
+// ATR & volatility
+atr   = ta.atr(atrLength)
+atrMa = ta.sma(atr, atrLength)
+highVolatility = atr > atrMa * atrMultiplier
+
+atrBullish = highVolatility and close > close[1] and atr > atr[1]
+atrBearish = highVolatility and close < close[1] and atr > atr[1]
+
+// Stochastic
+stochK = ta.stoch(close, high, low, stochLength)
+stochD = ta.sma(stochK, stochSmooth)
+stochOversoldCond   = stochK < stochOversold
+stochOverboughtCond = stochK > stochOverbought
+
+// Multi-timeframe MACD
+[htfMacd, htfSignal, htfHist] = request.security(syminfo.tickerid, higherTimeframe, ta.macd(source, fastLength, slowLength, signalLength))
+htfBullish = htfMacd > htfSignal
+htfBearish = htfMacd < htfSignal
+
+// Price action
+higherHigh    = high > high[1]
+lowerLow      = low < low[1]
+bullishCandle = close > open
+bearishCandle = close < open
+
+// Basic MACD cross signals
+bullishCross = ta.crossover(macdLine, signalLine)
+bearishCross = ta.crossunder(macdLine, signalLine)
+
+strongMacdBull = math.abs(macdLine) > minMacdValue and macdLine > 0
+strongMacdBear = math.abs(macdLine) > minMacdValue and macdLine < 0
+
+histMomentumBull = histLine > histLine[1] and histLine >  minHistChange
+histMomentumBear = histLine < histLine[1] and histLine < -minHistChange
+
+// =========================================================
+// =============== CONFIRMATION BARS LOGIC =================
+// =========================================================
+var int  bullConfirmCount = 0
+var int  bearConfirmCount = 0
+var bool confirmedBull    = false
+var bool confirmedBear    = false
+
+if bullishCross
+    bullConfirmCount := 0
+    confirmedBull    := false
+
+if bearishCross
+    bearConfirmCount := 0
+    confirmedBear    := false
+
+if bullConfirmCount < confirmBars and bullConfirmCount > 0
+    if histLine > histLine[1]
+        bullConfirmCount += 1
+    else
+        bullConfirmCount := 0
+
+if bearConfirmCount < confirmBars and bearConfirmCount > 0
+    if histLine < histLine[1]
+        bearConfirmCount += 1
+    else
+        bearConfirmCount := 0
+
+if bullishCross and histMomentumBull
+    bullConfirmCount := 1
+
+if bearishCross and histMomentumBear
+    bearConfirmCount := 1
+
+if bullConfirmCount >= confirmBars and not confirmedBull
+    confirmedBull := true
+
+if bearConfirmCount >= confirmBars and not confirmedBear
+    confirmedBear := true
+
+// =========================================================
+// =============== FILTERED SIGNALS (REGULAR) ===============
+// =========================================================
+bullRsiPass         = useRsiFilter        ? rsiOversoldCondition  or rsi < 50 : true
+bullVolumePass      = useVolumeFilter     ? volumeCondition       : true
+bullTrendPass       = useTrendFilter      ? uptrend               : true
+bullAdxPass         = useAdxFilter        ? strongTrend           : true
+bullAtrPass         = useAtrFilter        ? atrBullish or highVolatility : true
+bullStochPass       = useStochFilter      ? stochOversoldCond or stochK < 50 : true
+bullMtfPass         = useMtfFilter        ? htfBullish            : true
+bullPriceActionPass = usePriceActionFilter ? (higherHigh or bullishCandle) : true
+
+bearRsiPass         = useRsiFilter        ? rsiOverboughtCondition or rsi > 50 : true
+bearVolumePass      = useVolumeFilter     ? volumeCondition        : true
+bearTrendPass       = useTrendFilter      ? downtrend              : true
+bearAdxPass         = useAdxFilter        ? strongTrend            : true
+bearAtrPass         = useAtrFilter        ? atrBearish or highVolatility : true
+bearStochPass       = useStochFilter      ? stochOverboughtCond or stochK > 50 : true
+bearMtfPass         = useMtfFilter        ? htfBearish             : true
+bearPriceActionPass = usePriceActionFilter ? (lowerLow or bearishCandle) : true
+
+validBullSignal = confirmedBull and bullRsiPass and bullVolumePass and bullTrendPass and bullAdxPass and bullAtrPass and bullStochPass and bullMtfPass and bullPriceActionPass
+validBearSignal = confirmedBear and bearRsiPass and bearVolumePass and bearTrendPass and bearAdxPass and bearAtrPass and bearStochPass and bearMtfPass and bearPriceActionPass
+
+// =========================================================
+// ============ FILTERED EXTREME MACD SIGNALS ==============
+// =========================================================
+extremeBuyRsiPass         = useRsiFilter        ? rsiOversoldCondition  or rsi < 50 : true
+extremeBuyVolumePass      = useVolumeFilter     ? volumeCondition       : true
+extremeBuyTrendPass       = useTrendFilter      ? uptrend               : true
+extremeBuyAdxPass         = useAdxFilter        ? strongTrend           : true
+extremeBuyAtrPass         = useAtrFilter        ? atrBullish or highVolatility : true
+extremeBuyStochPass       = useStochFilter      ? stochOversoldCond or stochK < 50 : true
+extremeBuyMtfPass         = useMtfFilter        ? htfBullish            : true
+extremeBuyPriceActionPass = usePriceActionFilter ? (higherHigh or bullishCandle) : true
+
+validExtremeBuy = extremeBuySignal and extremeBuyRsiPass and extremeBuyVolumePass and extremeBuyTrendPass and extremeBuyAdxPass and extremeBuyAtrPass and extremeBuyStochPass and extremeBuyMtfPass and extremeBuyPriceActionPass
+
+extremeSellRsiPass         = useRsiFilter        ? rsiOverboughtCondition or rsi > 50 : true
+extremeSellVolumePass      = useVolumeFilter     ? volumeCondition        : true
+extremeSellTrendPass       = useTrendFilter      ? downtrend              : true
+extremeSellAdxPass         = useAdxFilter        ? strongTrend            : true
+extremeSellAtrPass         = useAtrFilter        ? atrBearish or highVolatility : true
+extremeSellStochPass       = useStochFilter      ? stochOverboughtCond or stochK > 50 : true
+extremeSellMtfPass         = useMtfFilter        ? htfBearish             : true
+extremeSellPriceActionPass = usePriceActionFilter ? (lowerLow or bearishCandle) : true
+
+validExtremeSell = extremeSellSignal and extremeSellRsiPass and extremeSellVolumePass and extremeSellTrendPass and extremeSellAdxPass and extremeSellAtrPass and extremeSellStochPass and extremeSellMtfPass and extremeSellPriceActionPass
+
+// =========================================================
+// ==================== DIVERGENCES ========================
+// =========================================================
+ph = ta.pivothigh(high, pivotLookback, pivotLookback)
+pl = ta.pivotlow(low,  pivotLookback, pivotLookback)
+
+macdPH = ta.pivothigh(macdLine, pivotLookback, pivotLookback)
+macdPL = ta.pivotlow(macdLine,  pivotLookback, pivotLookback)
+
+var float lastPriceLow  = na
+var float lastMacdLow   = na
+bullishDiv = false
+if not na(pl) and not na(macdPL)
+    if not na(lastPriceLow)
+        if low[pivotLookback] < lastPriceLow and macdLine[pivotLookback] > lastMacdLow
+            if math.abs(macdLine[pivotLookback]) > minMacdValue * 0.5
+                bullishDiv := true
+    lastPriceLow := low[pivotLookback]
+    lastMacdLow  := macdLine[pivotLookback]
+
+var float lastPriceHigh = na
+var float lastMacdHigh  = na
+bearishDiv = false
+if not na(ph) and not na(macdPH)
+    if not na(lastPriceHigh)
+        if high[pivotLookback] > lastPriceHigh and macdLine[pivotLookback] < lastMacdHigh
+            if math.abs(macdLine[pivotLookback]) > minMacdValue * 0.5
+                bearishDiv := true
+    lastPriceHigh := high[pivotLookback]
+    lastMacdHigh  := macdLine[pivotLookback]
+
+// =========================================================
+// ================= FILTER STATUS LOGIC ===================
+// =========================================================
+
+// Helper function to determine appropriate status text
+getFilterStatus(longPass, shortPass, filterName) =>
+    if filterName == "RSI"
+        if rsi < rsiOversold
+            "Oversold"
+        else if rsi > rsiOverbought
+            "Overbought"
+        else if rsi < 50
+            "Bearish"
+        else if rsi > 50
+            "Bullish"
+        else
+            "Neutral"
+    else if filterName == "Volume"
+        volumeCondition ? "High" : "Low"
+    else if filterName == "Trend"
+        if uptrend
+            "Uptrend"
+        else if downtrend
+            "Downtrend"
+        else
+            "Sideways"
+    else if filterName == "ADX"
+        if adx > adxThreshold + 20
+            "Strong"
+        else if adx > adxThreshold
+            "Trending"
+        else
+            "Weak"
+    else if filterName == "ATR"
+        if atrBullish
+            "Bullish"
+        else if atrBearish
+            "Bearish"
+        else if highVolatility
+            "Volatile"
+        else
+            "Low"
+    else if filterName == "Stoch"
+        if stochK < stochOversold
+            "Oversold"
+        else if stochK > stochOverbought
+            "Overbought"
+        else if stochK < 50
+            "Bearish"
+        else if stochK > 50
+            "Bullish"
+        else
+            "Neutral"
+    else if filterName == "MTF"
+        if htfBullish
+            "Bullish"
+        else if htfBearish
+            "Bearish"
+        else
+            "Neutral"
+    else if filterName == "Price"
+        if bullishCandle and higherHigh
+            "Strong↑"
+        else if bearishCandle and lowerLow
+            "Strong↓"
+        else if bullishCandle
+            "Bullish"
+        else if bearishCandle
+            "Bearish"
+        else
+            "Neutral"
+    else
+        "N/A"
+
+// Get status colors
+getFilterColor(filterName, status) =>
+    if status == "Oversold" or status == "Bullish" or status == "Uptrend" or status == "Strong↑" or status == "High"
+        color.lime
+    else if status == "Overbought" or status == "Bearish" or status == "Downtrend" or status == "Strong↓"
+        color.red
+    else if status == "Strong" or status == "Trending" or status == "Volatile"
+        color.yellow
+    else if status == "Weak" or status == "Low" or status == "Sideways"
+        color.orange
+    else
+        color.gray
+
+// =========================================================
+// ===================== MACD PLOTTING =====================
+// =========================================================
+
+// Histogram coloring
+histColor = histLine >= 0 ? 
+     (histLine >= histLine[1] ? color.new(#00ff00, 20) : color.new(#00ff00, 60)) : 
+     (histLine <= histLine[1] ? color.new(#ff0000, 20) : color.new(#ff0000, 60))
+
+// Zero line and thresholds
+hline(0, "Zero Line", color=color.new(color.gray, 50))
+hline(minMacdValue, "Min Bull", color=color.new(color.green, 70), linestyle=hline.style_dotted)
+hline(-minMacdValue, "Min Bear", color=color.new(color.red, 70), linestyle=hline.style_dotted)
+
+// MACD Lines
+plot(macdLine, color=color.new(#2196F3, 0), linewidth=2, title="MACD Line")
+plot(signalLine, color=color.new(#FF6D00, 0), linewidth=2, title="Signal Line")
+plot(histLine, style=plot.style_columns, color=histColor, title="Histogram")
+
+// Signal markers on MACD
+plotshape(validBullSignal, style=shape.triangleup, location=location.bottom, 
+     color=color.new(color.lime, 0), size=size.small, title="Bull Cross", text="BULL")
+plotshape(validBearSignal, style=shape.triangledown, location=location.top, 
+     color=color.new(color.red, 0), size=size.small, title="Bear Cross", text="BEAR")
+
+plotshape(validExtremeBuy, style=shape.labelup, location=location.bottom, 
+     color=color.new(#00FF00, 0), size=size.large, title="Extreme Buy", text="BUY", textcolor=color.black)
+plotshape(validExtremeSell, style=shape.labeldown, location=location.top, 
+     color=color.new(#FF0000, 0), size=size.large, title="Extreme Sell", text="SELL", textcolor=color.white)
+
+plotshape(bullishDiv, style=shape.labelup, location=location.bottom, 
+     color=color.new(color.green, 0), size=size.tiny, title="Bullish Div", text="BD")
+plotshape(bearishDiv, style=shape.labeldown, location=location.top, 
+     color=color.new(color.red, 0), size=size.tiny, title="Bearish Div", text="BD")
+
+// =========================================================
+// ===================== FILTER TABLE ======================
+// =========================================================
+
+var table infoTable = table.new(position.top_right, 2, 10,
+     bgcolor      = color.new(color.black, 90),
+     border_width = 1,
+     border_color = color.new(color.white, 60))
+
+if barstate.islast
+    // Header
+    table.cell(infoTable, 0, 0, "FILTER", text_color=color.white, text_size=size.normal, bgcolor=color.new(#020617, 0))
+    table.cell(infoTable, 1, 0, "STATUS", text_color=color.white, text_size=size.normal, bgcolor=color.new(#020617, 0))
+
+    // RSI
+    rsiStatus = getFilterStatus(bullRsiPass, bearRsiPass, "RSI")
+    rsiColor = getFilterColor("RSI", rsiStatus)
+    table.cell(infoTable, 0, 1, "RSI", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 80))
+    table.cell(infoTable, 1, 1, rsiStatus, text_color=rsiColor, text_size=size.small, bgcolor=color.new(#020617, 80))
+
+    // Volume
+    volStatus = getFilterStatus(bullVolumePass, bearVolumePass, "Volume")
+    volColor = getFilterColor("Volume", volStatus)
+    table.cell(infoTable, 0, 2, "Volume", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 92))
+    table.cell(infoTable, 1, 2, volStatus, text_color=volColor, text_size=size.small, bgcolor=color.new(#020617, 92))
+
+    // Trend
+    trendStatus = getFilterStatus(bullTrendPass, bearTrendPass, "Trend")
+    trendColor = getFilterColor("Trend", trendStatus)
+    table.cell(infoTable, 0, 3, "Trend", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 80))
+    table.cell(infoTable, 1, 3, trendStatus, text_color=trendColor, text_size=size.small, bgcolor=color.new(#020617, 80))
+
+    // ADX
+    adxStatus = getFilterStatus(bullAdxPass, bearAdxPass, "ADX")
+    adxColor = getFilterColor("ADX", adxStatus)
+    table.cell(infoTable, 0, 4, "ADX", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 92))
+    table.cell(infoTable, 1, 4, adxStatus, text_color=adxColor, text_size=size.small, bgcolor=color.new(#020617, 92))
+
+    // ATR
+    atrStatus = getFilterStatus(bullAtrPass, bearAtrPass, "ATR")
+    atrColor = getFilterColor("ATR", atrStatus)
+    table.cell(infoTable, 0, 5, "ATR", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 80))
+    table.cell(infoTable, 1, 5, atrStatus, text_color=atrColor, text_size=size.small, bgcolor=color.new(#020617, 80))
+
+    // Stochastic
+    stochStatus = getFilterStatus(bullStochPass, bearStochPass, "Stoch")
+    stochColor = getFilterColor("Stoch", stochStatus)
+    table.cell(infoTable, 0, 6, "Stochastic", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 92))
+    table.cell(infoTable, 1, 6, stochStatus, text_color=stochColor, text_size=size.small, bgcolor=color.new(#020617, 92))
+
+    // MTF
+    mtfStatus = getFilterStatus(bullMtfPass, bearMtfPass, "MTF")
+    mtfColor = getFilterColor("MTF", mtfStatus)
+    table.cell(infoTable, 0, 7, "Multi-TF", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 80))
+    table.cell(infoTable, 1, 7, mtfStatus, text_color=mtfColor, text_size=size.small, bgcolor=color.new(#020617, 80))
+
+    // Price Action
+    priceStatus = getFilterStatus(bullPriceActionPass, bearPriceActionPass, "Price")
+    priceColor = getFilterColor("Price", priceStatus)
+    table.cell(infoTable, 0, 8, "Price Action", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 92))
+    table.cell(infoTable, 1, 8, priceStatus, text_color=priceColor, text_size=size.small, bgcolor=color.new(#020617, 92))
+
+    // Overall Signal
+    signalText  = validExtremeBuy  ? "🟢 BUY ZONE"
+               : validExtremeSell ? "🔴 SELL ZONE"
+               : validBullSignal  ? "🟢 BULLISH"
+               : validBearSignal  ? "🔴 BEARISH"
+               : "⚪ NEUTRAL"
+
+    signalBg    = validExtremeBuy  ? color.new(color.green, 70)
+               : validExtremeSell ? color.new(color.red, 70)
+               : validBullSignal  ? color.new(color.lime, 80)
+               : validBearSignal  ? color.new(color.red, 80)
+               : color.new(color.gray, 85)
+
+    signalColor = validExtremeBuy or validBullSignal  ? color.lime
+               : validExtremeSell or validBearSignal ? color.red
+               : color.gray
+
+    table.cell(infoTable, 0, 9, "SIGNAL", text_color=color.white, text_size=size.small, bgcolor=color.new(#020617, 80))
+    table.cell(infoTable, 1, 9, signalText, text_color=signalColor, text_size=size.normal, bgcolor=signalBg)
+
+// =========================================================
+// =================== ALERTS ==============================
+// =========================================================
+
+alertcondition(validBullSignal,   title="Valid Bullish Signal",  message="🟢 BULL Signal - Crossover Confirmed")
+alertcondition(validBearSignal,   title="Valid Bearish Signal",  message="🔴 BEAR Signal - Crossover Confirmed")
+alertcondition(validExtremeBuy,   title="🚨 EXTREME BUY",        message="🟢🟢🟢 BUY SIGNAL - MACD at Extreme LOW!")
+alertcondition(validExtremeSell,  title="🚨 EXTREME SELL",       message="🔴🔴🔴 SELL SIGNAL - MACD at Extreme HIGH!")
+alertcondition(bullishDiv,        title="Bullish Divergence",    message="Bullish Divergence Detected")
+alertcondition(bearishDiv,        title="Bearish Divergence",    message="Bearish Divergence Detected")

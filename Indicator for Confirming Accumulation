@@ -1,0 +1,131 @@
+Indicator for Confirming Accumulation
+
+
+// This work is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International  
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © BigBeluga
+
+//@version=6
+indicator('Volumatic Variable Index Dynamic Average [BigBeluga]', 'Volumatic VIDYA [BigBeluga]', overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+// INPUTS {
+int vidya_length = input.int(10, 'VIDYA Length')
+int vidya_momentum = input.int(20, 'VIDYA Momentum')
+float band_distance = input.float(2, 'Distance factor for upper/lower bands', step = 0.1)
+int pivot_left_bars = 3
+int pivot_right_bars = pivot_left_bars
+float source = input.source(close, 'Source')
+color up_trend_color = input(#17dfad, '+', group = 'Color', inline = 'c')
+color down_trend_color = input(#dd326b, '-', group = 'Color', inline = 'c')
+bool shadow = input.bool(true, 'Shadow', group = 'Color', inline = 'c')
+// }
+
+// INIT VARS {
+var line pivot_line = na
+var float volume_value = na
+float smoothed_value = na
+var bool is_trend_up = false
+var array<line> liquidity_lines_low = array.new<line>(500)
+var array<line> liquidity_lines_high = array.new<line>(500)
+var float up_trend_volume = na
+var float down_trend_volume = na
+// }
+
+// FUNCTIONS {
+vidya_calc(src, vidya_length, vidya_momentum) =>
+    float momentum = ta.change(src)
+    float sum_pos_momentum = math.sum(momentum >= 0 ? momentum : 0.0, vidya_momentum)
+    float sum_neg_momentum = math.sum(momentum >= 0 ? 0.0 : -momentum, vidya_momentum)
+    float abs_cmo = math.abs(100 * (sum_pos_momentum - sum_neg_momentum) / (sum_pos_momentum + sum_neg_momentum))
+    float alpha = 2 / (vidya_length + 1)
+    var float vidya_value = 0.0
+    vidya_value := alpha * abs_cmo / 100 * src + (1 - alpha * abs_cmo / 100) * nz(vidya_value[1])
+    ta.sma(vidya_value, 15)
+
+method extend_liquidity_lines(array<line> line_array, float price_level, bool is_cross, float volume_val) =>
+    if array.size(line_array) > 0 and last_bar_index - bar_index < 5000
+        for i = 0 to array.size(line_array) - 1 by 1
+            if i < array.size(line_array)
+                line liquidity_line = array.get(line_array, i)
+                float current_line_level = line.get_y2(liquidity_line)
+                bool price_cross = is_cross ? price_level < current_line_level and price_level[1] >= current_line_level : price_level > current_line_level and price_level[1] <= current_line_level
+                bool is_short_line = bar_index - line.get_x1(liquidity_line) < 50
+                if price_cross and is_short_line
+                    line.set_x2(liquidity_line, bar_index)
+                    array.remove(line_array, i)
+                    label.new(bar_index - 1, price_level[1], str.tostring(volume_val, format.volume), color=color.rgb(0, 0, 0, 99), style=is_cross ? label.style_label_lower_left : label.style_label_upper_left, textcolor=chart.fg_color, size=size.small)
+                    label.new(bar_index - 1, price_level[1], text='◉', color=#00000003, textcolor=is_cross ? down_trend_color : up_trend_color, style=label.style_label_center, size=size.normal)
+// }
+
+// CALCULATIONS {
+float atr_value = ta.atr(200)
+float vidya_value = vidya_calc(source, vidya_length, vidya_momentum)
+float upper_band = vidya_value + atr_value * band_distance
+float lower_band = vidya_value - atr_value * band_distance
+
+if ta.crossover(source, upper_band)
+    is_trend_up := true
+if ta.crossunder(source, lower_band)
+    is_trend_up := false
+
+if is_trend_up
+    smoothed_value := lower_band
+if not is_trend_up
+    smoothed_value := upper_band
+if ta.change(is_trend_up)
+    smoothed_value := na
+
+bool pivot_high = not na(ta.pivothigh(pivot_left_bars, pivot_right_bars))
+bool pivot_low = not na(ta.pivotlow(close, pivot_left_bars, pivot_right_bars))
+
+if low[pivot_right_bars] > smoothed_value and pivot_low
+    pivot_line := line.new(bar_index[pivot_right_bars], low[pivot_right_bars], bar_index[pivot_right_bars] + 5, low[pivot_right_bars], color=color.new(up_trend_color, 50))
+    array.push(liquidity_lines_low, pivot_line)
+    volume_value := math.sum(volume, pivot_right_bars + pivot_left_bars) / (pivot_right_bars + pivot_left_bars)
+
+if high[pivot_right_bars] < smoothed_value and pivot_high
+    pivot_line := line.new(bar_index[pivot_right_bars], high[pivot_right_bars], bar_index[pivot_right_bars] + 5, high[pivot_right_bars], color=color.new(down_trend_color, 50))
+    array.push(liquidity_lines_high, pivot_line)
+    volume_value := math.sum(-volume, pivot_right_bars + pivot_left_bars) / (pivot_right_bars + pivot_left_bars)
+
+extend_liquidity_lines(liquidity_lines_high, smoothed_value, true, volume_value)
+extend_liquidity_lines(liquidity_lines_low, smoothed_value, false, volume_value)
+
+bool trend_cross_up = not is_trend_up[1] and is_trend_up
+bool trend_cross_down = not is_trend_up and is_trend_up[1]
+
+if ta.change(trend_cross_up) or ta.change(trend_cross_down)
+    up_trend_volume := 0
+    down_trend_volume := 0
+
+if not(ta.change(trend_cross_up) or ta.change(trend_cross_down))
+    up_trend_volume := up_trend_volume + (close > open ? volume : 0)
+    down_trend_volume := down_trend_volume + (close < open ? volume : 0)
+
+float avg_volume_delta = (up_trend_volume + down_trend_volume) / 2
+color trend_color = is_trend_up ? up_trend_color : down_trend_color
+string delta_volume = na(avg_volume_delta) ? '0%' : str.tostring((up_trend_volume - down_trend_volume) / avg_volume_delta * 100, format.percent)
+// }
+
+// PLOTS {
+if barstate.islast
+    label.new(bar_index, smoothed_value, 'Buy: ' + str.tostring(up_trend_volume, format.volume) + '\n Sell: ' + str.tostring(down_trend_volume, format.volume) + '\nDelta Volume: ' + delta_volume, color=color.new(trend_color, 90), style=is_trend_up ? label.style_label_upper_left : label.style_label_lower_left, textcolor=chart.fg_color)
+    label.new(bar_index, smoothed_value, text='✪', color=#00000003, textcolor=trend_color, style=label.style_label_center, size=size.large)
+
+if str.tonumber(str.replace(delta_volume, '%', '')) > 30 and str.tonumber(str.replace(delta_volume, '%', ''))<60
+    label.new(bar_index, close, delta_volume, style=label.style_label_down, textcolor=color.rgb(5, 47, 10), color=color.new(color.red, 100), size=size.small)
+
+p1 = plot(smoothed_value, color=trend_color, linewidth=2, style=plot.style_linebr)
+p2 = plot(hl2, display=display.none)
+fill(p1, p2, color=color.new(trend_color, shadow ? 80 : 100))
+
+plotshape(series=trend_cross_up[1] ? smoothed_value[0] : na, title='Trend Up', style=shape.labelup, location=location.absolute, color=color.new(up_trend_color, 50), text='▲', textcolor=chart.fg_color)
+plotshape(series=trend_cross_down[1] ? smoothed_value[0] : na, title='Trend Down', style=shape.labeldown, location=location.absolute, color=color.new(down_trend_color, 50), text='▼', textcolor=chart.fg_color)
+if str.tonumber(str.replace(delta_volume, '%', '')) > 60
+    label.new(bar_index, close, delta_volume, style=label.style_label_down, textcolor=color.rgb(244, 10, 10), color=color.new(#f6f2f2, 100), size=size.small)
+
+
+// }
+This indicator helps identify stocks showing strong buying pressure, highlighting moments when significant money is flowing into a symbol. By analyzing active buying volume, price strength, momentum, and institutional-style accumulation, it automatically marks stocks with powerful upward behavior.
+
+It is useful for spotting early accumulation, potential breakouts, and high-probability bullish setups.

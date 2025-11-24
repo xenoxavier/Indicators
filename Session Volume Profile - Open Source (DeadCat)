@@ -1,0 +1,319 @@
+Session Volume Profile - Open Source (DeadCat)
+
+
+
+//@version=5
+indicator('Session Volume Profile (DeadCat)', 'SVP + (DeadCat)', overlay = true, max_bars_back = 500)
+
+import algotraderdev/contrast/1
+
+//#region Inputs & Constants
+
+const string RANGE_GROUP = 'TIME RANGE'
+const string APPEARANCE_GROUP = 'APPEARANCE'
+const string COLOR_GROUP = 'COLOR'
+const string KEY_PRICES_GROUP = 'POC & Value Area'
+
+// Time Range Settings
+string PROFILE_TIMEFRAME = input.timeframe("D", "Profile Timeframe", group = RANGE_GROUP, tooltip = 'Select timeframe for volume profile periods (D=Daily, W=Weekly, M=Monthly, etc.)')
+
+// Value Area Settings
+bool SHOW_PROFILE = input.bool(true, 'Show Volume Profile Rows', group = KEY_PRICES_GROUP)
+bool SHOW_VAH_VAL = input.bool(true, 'Display VAH/VAL', group = KEY_PRICES_GROUP)
+bool SHOW_POC = input.bool(true, 'Display POC', group = KEY_PRICES_GROUP)
+bool SHOW_BACKGROUND = input.bool(true, 'Value Area Background', group = KEY_PRICES_GROUP)
+
+// Appearance Settings
+int NUM_ROWS = input.int(24, 'Profile Number of Rows', minval = 10, maxval = 500, group = APPEARANCE_GROUP)
+int MAX_WIDTH = input.int(80, 'Profile Width %', maxval = 500, minval = 10, step = 10, group = APPEARANCE_GROUP)
+int HEIGHT_PERCENTAGE_PER_ROW = input.int(68, 'Height % per Row', minval = 1, maxval = 100, group = APPEARANCE_GROUP)
+int VALUE_AREA_THRESHOLD = input.int(40, 'Value Area (%)', minval = 1, maxval = 100, group = APPEARANCE_GROUP)
+
+
+// Color Settings
+color PROFILE_COLOR = input.color(#5d606b77, 'Volume Profile', group = COLOR_GROUP)
+color VALUE_AREA_COLOR = input.color(#787b8677, 'Value Area Highlight', group = COLOR_GROUP)
+color POC_COLOR = input.color(color.yellow, 'POC (Point of Control)', group = COLOR_GROUP)
+color VAH_COLOR = input.color(color.blue, 'VAH (Value Area High)', group = COLOR_GROUP)
+color VAL_COLOR = input.color(color.blue, 'VAL (Value Area Low)', group = COLOR_GROUP)
+color BACKGROUND_COLOR = input.color(color.new(color.blue, 90), 'Value Area Background', group = COLOR_GROUP)
+
+//#endregion
+
+//#region Utils
+
+// @function Identifies the index of the max value in the array.
+maxIndex(float[] a) =>
+    if a.size() == 0
+        na
+    else
+        float max = a.first()
+        int maxIndex = 0
+        for [i, v] in a
+            if v > max
+                max := v
+                maxIndex := i
+        maxIndex
+
+// @function Returns the timeframe resolution in minutes
+getTimeframeMinutes() =>
+    timeframeMinutes = timeframe.multiplier * (timeframe.isseconds ? 1. / 60 : timeframe.isminutes ? 1. : timeframe.isdaily ? 60. * 24 : timeframe.isweekly ? 60. * 24 * 7 : timeframe.ismonthly ? 60. * 24 * 30.4375 : na)
+    timeframeMinutes
+
+getSelectedTimeframeMinutes(selectedTimeframe) =>
+    request.security(syminfo.tickerid, selectedTimeframe, getTimeframeMinutes())
+
+// @function Determines if the selected timeframe is intraday
+isIntradayTimeframe(selectedTimeframe) => 
+    isIntraday = request.security(syminfo.tickerid, selectedTimeframe, timeframe.isintraday)
+    isDaily = request.security(syminfo.tickerid, selectedTimeframe, timeframe.isdaily)
+    isWeekly = request.security(syminfo.tickerid, selectedTimeframe, timeframe.isweekly)
+    isMonthly = request.security(syminfo.tickerid, selectedTimeframe, timeframe.ismonthly)
+    timeframeType = isIntraday ? "Intraday" : isDaily ? "Daily" : isWeekly ? "Weekly" : isMonthly ? "Monthly" : "Unknown"
+    timeframeType
+
+//#endregion
+
+//#region Candle
+
+// @type Stores individual bar/candle data for volume profile calculation
+type PriceBar
+    float highPrice
+    float lowPrice
+    float volumeData = 1
+
+//#endregion
+
+//#region VP
+
+// @type Main volume profile calculator and renderer
+type VolumeProfileEngine
+    PriceBar[] historicalBars
+    float minProfilePrice
+    float maxProfilePrice
+    float priceStepSize
+    polyline profileHistogram
+    polyline valueAreaHistogram
+    line pocLevelLine
+    line vahLevelLine  
+    line valLevelLine
+    label pocLevelLabel
+    label vahLevelLabel
+    label valLevelLabel
+
+// @function Initializes a new volume profile engine
+method initialize(VolumeProfileEngine this) =>
+    this.historicalBars := array.new<PriceBar>()
+    this
+
+// @function Calculates which price bucket a given price belongs to
+method calculatePriceBucket(VolumeProfileEngine this, float price) =>
+    math.min(math.floor((price - this.minProfilePrice) / this.priceStepSize), NUM_ROWS - 1)
+
+// @function Gets the center price for a given bucket index
+method getBucketCenterPrice(VolumeProfileEngine this, int bucketIndex) =>
+    (bucketIndex + 0.5) * this.priceStepSize + this.minProfilePrice
+
+// @function Stores bar data for later processing
+method storePriceBar(VolumeProfileEngine this, PriceBar barData) =>
+    this.historicalBars.push(barData)
+    this.minProfilePrice := na(this.minProfilePrice) ? barData.lowPrice : math.min(this.minProfilePrice, barData.lowPrice)
+    this.maxProfilePrice := na(this.maxProfilePrice) ? barData.highPrice : math.max(this.maxProfilePrice, barData.highPrice)
+    this.priceStepSize := (this.maxProfilePrice - this.minProfilePrice) / NUM_ROWS
+
+// @function Creates histogram visualization using polylines
+method createHistogramPolyline(VolumeProfileEngine this, int[] barPositions, int profileStartBar, int profileEndBar, float stepSize, float barHeight, color histogramColor) =>
+    polylinePoints = array.new<chart.point>()
+    heightGap = (stepSize - barHeight) / 2
+    for [index, barPosition] in barPositions
+        if barPosition > profileStartBar
+            bottomPrice = index * stepSize + heightGap + this.minProfilePrice
+            topPrice = bottomPrice + barHeight
+            polylinePoints.push(chart.point.from_index(index = profileStartBar, price = bottomPrice))
+            polylinePoints.push(chart.point.from_index(index = barPosition, price = bottomPrice))
+            polylinePoints.push(chart.point.from_index(index = barPosition, price = topPrice))
+            polylinePoints.push(chart.point.from_index(index = profileStartBar, price = topPrice))
+    polyline.new(polylinePoints, closed = true, line_color = histogramColor, fill_color = histogramColor)
+
+// @function Main calculation and rendering engine for volume profile
+method processAndRender(VolumeProfileEngine this, int profileStartBar, int profileEndBar) =>
+    if this.historicalBars.size() > 0 and profileEndBar > profileStartBar
+        // Calculate volume distribution across price levels
+        volumeDistribution = array.new_float(NUM_ROWS, 0)
+        for priceBar in this.historicalBars
+            startBucket = this.calculatePriceBucket(priceBar.lowPrice)
+            endBucket = this.calculatePriceBucket(priceBar.highPrice)
+            bucketsSpanned = endBucket - startBucket + 1
+            volumePerBucket = priceBar.volumeData / bucketsSpanned
+            for bucketIndex = startBucket to endBucket
+                volumeDistribution.set(bucketIndex, volumeDistribution.get(bucketIndex) + volumePerBucket)
+        
+        maxVolumeInProfile = volumeDistribution.max()
+        if maxVolumeInProfile > 0
+            // Calculate profile dimensions
+            profileBarLength = profileEndBar - profileStartBar
+            maxHistogramWidth = math.round(profileBarLength * MAX_WIDTH / 100)
+            
+            // Calculate bar positions for histogram
+            histogramPositions = array.new_int()
+            valueAreaPositions = array.new_int()
+            
+            // Find Point of Control (highest volume level)
+            pocBucketIndex = maxIndex(volumeDistribution)
+            totalProfileVolume = volumeDistribution.sum()
+            valueAreaThreshold = totalProfileVolume * VALUE_AREA_THRESHOLD / 100
+            currentValueAreaVolume = volumeDistribution.get(pocBucketIndex)
+            valueAreaHighBucket = pocBucketIndex
+            valueAreaLowBucket = pocBucketIndex
+            
+            // Expand value area symmetrically around POC
+            while currentValueAreaVolume < valueAreaThreshold
+                canExpandUp = valueAreaHighBucket < NUM_ROWS - 1
+                canExpandDown = valueAreaLowBucket > 0
+                
+                if not canExpandUp and not canExpandDown
+                    break
+                    
+                volumeAbove = canExpandUp ? volumeDistribution.get(valueAreaHighBucket + 1) : 0
+                volumeBelow = canExpandDown ? volumeDistribution.get(valueAreaLowBucket - 1) : 0
+                
+                if volumeAbove >= volumeBelow and canExpandUp
+                    currentValueAreaVolume += volumeAbove
+                    valueAreaHighBucket += 1
+                else if canExpandDown
+                    currentValueAreaVolume += volumeBelow
+                    valueAreaLowBucket -= 1
+                else
+                    break
+            
+            // Create histogram coordinates (left-aligned from profile start)
+            for [bucketIndex, volumeAmount] in volumeDistribution
+                barWidth = math.round(volumeAmount / maxVolumeInProfile * maxHistogramWidth)
+                barEndPosition = profileStartBar + barWidth
+                histogramPositions.push(barEndPosition)
+                
+                // Determine if this bucket is in value area
+                isInValueArea = bucketIndex >= valueAreaLowBucket and bucketIndex <= valueAreaHighBucket
+                valueAreaPositions.push(isInValueArea ? barEndPosition : profileStartBar)
+            
+            rowHeight = HEIGHT_PERCENTAGE_PER_ROW / 100 * this.priceStepSize
+
+            // Render histogram if enabled
+            if SHOW_PROFILE
+                if not na(this.profileHistogram)
+                    this.profileHistogram.delete()
+                this.profileHistogram := this.createHistogramPolyline(histogramPositions, profileStartBar, profileEndBar, this.priceStepSize, rowHeight, PROFILE_COLOR)
+                
+                if not na(this.valueAreaHistogram)
+                    this.valueAreaHistogram.delete()
+                this.valueAreaHistogram := this.createHistogramPolyline(valueAreaPositions, profileStartBar, profileEndBar, this.priceStepSize, rowHeight, VALUE_AREA_COLOR)
+
+            // Add key level indicators with labels
+            if SHOW_POC
+                if not na(this.pocLevelLine)
+                    this.pocLevelLine.delete()
+                if not na(this.pocLevelLabel)
+                    this.pocLevelLabel.delete()
+                pocPrice = this.getBucketCenterPrice(pocBucketIndex)
+                this.pocLevelLine := line.new(x1 = profileStartBar, y1 = pocPrice, x2 = profileEndBar, y2 = pocPrice, color = POC_COLOR, width = 2)
+                this.pocLevelLabel := label.new(x = profileStartBar, y = pocPrice, text = "POC", xloc = xloc.bar_index, yloc = yloc.price, color = color.new(color.white, 100), textcolor = POC_COLOR, style = label.style_label_right, size = size.small)
+            
+            if SHOW_VAH_VAL
+                if not na(this.vahLevelLine)
+                    this.vahLevelLine.delete()
+                if not na(this.valLevelLine)
+                    this.valLevelLine.delete()
+                if not na(this.vahLevelLabel)
+                    this.vahLevelLabel.delete()
+                if not na(this.valLevelLabel)
+                    this.valLevelLabel.delete()
+                    
+                valueAreaHighPrice = this.getBucketCenterPrice(valueAreaHighBucket)
+                valueAreaLowPrice = this.getBucketCenterPrice(valueAreaLowBucket)
+                
+                this.vahLevelLine := line.new(x1 = profileStartBar, y1 = valueAreaHighPrice, x2 = profileEndBar, y2 = valueAreaHighPrice, color = VAH_COLOR, width = 1)
+                this.valLevelLine := line.new(x1 = profileStartBar, y1 = valueAreaLowPrice, x2 = profileEndBar, y2 = valueAreaLowPrice, color = VAL_COLOR, width = 1)
+                
+                this.vahLevelLabel := label.new(x = profileStartBar, y = valueAreaHighPrice, text = "VAH", xloc = xloc.bar_index, yloc = yloc.price, color = color.new(color.white, 100), textcolor = VAH_COLOR, style = label.style_label_right, size = size.small)
+                this.valLevelLabel := label.new(x = profileStartBar, y = valueAreaLowPrice, text = "VAL", xloc = xloc.bar_index, yloc = yloc.price, color = color.new(color.white, 100), textcolor = VAL_COLOR, style = label.style_label_right, size = size.small)
+                
+                // Value area background shading
+                if SHOW_BACKGROUND
+                    linefill.new(this.vahLevelLine, this.valLevelLine, BACKGROUND_COLOR)
+
+//#endregion
+
+//#region Main Logic
+
+var VolumeProfileEngine profileEngine = VolumeProfileEngine.new().initialize()
+var int currentProfileStart = na
+var int currentProfileEnd = na
+
+// Determine when new profile periods begin
+selectedTimeframeType = isIntradayTimeframe(PROFILE_TIMEFRAME)
+bool isNewPeriod = false
+
+if selectedTimeframeType == "Intraday"
+    int intervalMinutes = int(getSelectedTimeframeMinutes(PROFILE_TIMEFRAME))
+    int currentMinuteOfDay = (hour * 60 + minute) % intervalMinutes
+    isNewPeriod := currentMinuteOfDay == 0 and currentMinuteOfDay[1] != 0
+else if selectedTimeframeType == "Daily"
+    isNewPeriod := ta.change(time("D")) != 0
+else if selectedTimeframeType == "Weekly"
+    isNewPeriod := ta.change(time("W")) != 0
+else if selectedTimeframeType == "Monthly"
+    isNewPeriod := ta.change(time("1M")) != 0
+
+// Process period transitions
+if isNewPeriod and not na(profileEngine.minProfilePrice) and not na(currentProfileStart) and not na(currentProfileEnd)
+    profileEngine.processAndRender(currentProfileStart, currentProfileEnd)
+    profileEngine := VolumeProfileEngine.new().initialize()
+    currentProfileStart := bar_index
+
+// Initialize profile start if needed
+if na(currentProfileStart)
+    currentProfileStart := bar_index
+
+// Store current bar data
+PriceBar currentBar = PriceBar.new(high, low, nz(volume, 100))
+profileEngine.storePriceBar(currentBar)
+currentProfileEnd := bar_index
+
+// Final update on last bar
+if barstate.islast and not na(profileEngine.minProfilePrice) and not na(currentProfileStart)
+    profileEngine.processAndRender(currentProfileStart, bar_index)
+
+//#endregion
+
+
+
+Decided to make this Open Source so everyone can make edits.
+
+Volume Profile is a charting study that displays trading activity over specific time periods at various price levels. It appears as a horizontal histogram on the chart, revealing where traders have shown the most interest based on volume concentration.
+
+This Volume Profile automatically anchors to user-selected timeframes, creating fresh volume analysis for each new period while maintaining clean, systematic visualization of price-volume relationships.
+
+Core Components:
+
+Point of Control (POC): The price level with the highest volume activity during the selected period, marked with a yellow line and left-side label.
+
+Value Area High/Low (VAH/VAL): Price boundaries that contain a specified percentage of the total volume (default 40%), helping identify the main trading range where most activity occurred.
+
+Volume Histogram: Left-aligned bars showing volume distribution across price levels, with value area highlighting for enhanced visual clarity.
+
+Key Features:
+- Automatic Period Detection: Supports hourly, daily, weekly, and monthly timeframe anchoring
+- Customizable Granularity: Adjustable rows (10-500) for different price resolution needs
+- Labels: Clear POC, VAH, and VAL identification positioned at profile start
+- Toggle Controls**: Optional display for volume rows, key levels, and background fills
+- Clean Visualization: Profiles reset automatically at each new period for current market focus
+
+Display Options:
+- Profile Rows: Show/hide the volume histogram bars
+- Key Level Lines: Individual controls for POC, VAH, and VAL display
+- Value Area Background: Optional shading between VAH and VAL levels
+- Color Customization: Separate color controls for all visual elements
+
+The indicator provides systematic volume analysis by creating fresh profiles at regular intervals, helping traders identify significant price levels and volume patterns within their preferred timeframe structure.
+
+Disclaimer: This indicator is for educational and informational purposes only. Trading decisions should be based on comprehensive analysis and proper risk management. Past performance does not guarantee future results.

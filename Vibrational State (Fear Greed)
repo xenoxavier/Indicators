@@ -1,0 +1,38 @@
+Vibrational State (Fear/Greed)
+
+//@version=5
+indicator("Vibrational State (Fear/Greed)", overlay=false, max_lines_count=500, max_labels_count=500)
+
+// User Inputs
+lengthRSI = input.int(14, "RSI Length")
+lengthVol = input.int(20, "Volatility Length")
+lengthMA = input.int(50, "Smoothing MA")
+
+// RSI for greed/fear
+rsiVal = ta.rsi(close, lengthRSI)
+
+// Volatility = fear indicator
+volatility = ta.stdev(close, lengthVol)
+
+// Normalizing RSI and Volatility
+normRSI = (rsiVal - 30) / (70 - 30)  // scale 0 to 1, 0=fear, 1=greed
+normVol = volatility / ta.highest(volatility, lengthVol)  // scale 0 to 1
+
+// Vibrational State (energy concept)
+vibration = (normRSI + (1 - normVol)) / 2
+
+// Smooth Vibrational State
+vibrationMA = ta.sma(vibration, lengthMA)
+
+// Plot Vibrational State
+plot(vibrationMA, color=color.new(color.purple,0), title="Vibrational State", linewidth=2)
+hline(0.5, "Neutral", color=color.gray, linestyle=hline.style_dotted)
+hline(0.6, "Greed Zone", color=color.green, linestyle=hline.style_dashed)
+hline(0.4, "Fear Zone", color=color.red, linestyle=hline.style_dashed)
+
+// Optional: background coloring based on state
+bgcolor(vibrationMA > 0.6 ? color.new(color.green, 80) : vibrationMA < 0.4 ? color.new(color.red, 80) : na)
+
+// Label with spacing (every 10 bars to avoid clutter)
+if bar_index % 10 == 0
+    label.new(bar_index, vibrationMA, text = "VS: " + str.tostring(vibrationMA, "#.##"), style=label.style_label_down, color=color.new(color.blue,60), textcolor=color.white)

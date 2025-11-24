@@ -1,0 +1,36 @@
+LIQUIDITY (TURNOVER)
+
+//@version=5
+indicator("RG_CHARTS_TURNOVER_DAILY", shorttitle="RG Charts-Turnover", overlay=true, max_labels_count=500)
+
+// ────── Inputs ──────
+label_size       = input.string("small", "Label Size", options=["tiny", "small", "normal", "large"])
+bg_color         = input.color(color.new(#1a0885, 80), "Background Color")
+text_color       = input.color(color.rgb(255,255,254), "Text Color")
+show_on_intraday = input.bool(true, "Show on Lower Timeframes Too?")
+
+// ────── Label size (safe switch) ──────
+sz = label_size == "tiny"   ? size.tiny   :
+     label_size == "normal" ? size.normal :
+     label_size == "large"  ? size.large  : size.small
+
+// ────── Logic ──────
+is_daily_or_higher = timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly
+show_label = is_daily_or_higher or show_on_intraday
+
+if show_label
+    turnover_cr      = (close * volume) / 10000000
+    turnover_rounded = math.round(turnover_cr, 2)
+    label_txt        = "₹" + str.tostring(turnover_rounded, "#.##") + " Cr"
+
+    var label liveLabel = na
+    label.delete(liveLabel)
+
+    liveLabel := label.new(bar_index, high, label_txt, 
+         color     = bg_color,
+         textcolor = text_color,
+         style     = label.style_label_down,
+         yloc      = yloc.abovebar,
+         size      = sz,
+         tooltip   = "Live Turnover: ₹" + str.tostring(turnover_rounded, "#.##") + " Cr")
+         

@@ -1,0 +1,345 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © ChartPrime
+
+//@version=5
+indicator("Advanced Market Structure and Fair Value Gaps", "AMS & FVG", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500, max_polylines_count = 100)
+
+import ChartPrime/cp_lib/1 as cp
+
+//------------------------------------------------------------------------------
+// Constants & Variables
+//------------------------------------------------------------------------------
+
+// Constants
+var string      OPEN_CLOSE          = "Open-Close"
+var string      HIGH_LOW            = "High-Low"
+var string      TRUE_RANGE          = "True Range"
+var string      OHLC4               = "OHLC4"
+
+var string      UP_TREND            = "Bullish"
+var string      DOWN_TREND          = "Bearish"
+var string      NO_TREND            = "Neutral"
+
+var color       NEUTRAL_COLOR       = color.gray
+var color       BULLISH_COLOR       = #089981
+var color       BEARISH_COLOR       = #f23645
+
+var string      SIZE_NORMAL         = "Normal"
+var string      SIZE_SMALL          = "Small"
+var string      SIZE_LARGE          = "Large"
+var string      SIZE_TINY           = "Tiny"
+var string      SIZE_HUGE           = "Huge"
+var string      SIZE_AUTO           = "Auto"
+
+var string      TF_1MIN             = "1"
+var string      TF_3MIN             = "3"
+var string      TF_5MIN             = "5"
+var string      TF_15MIN            = "15"
+var string      TF_30MIN            = "30"
+var string      TF_1HOUR            = "60"
+var string      TF_4HOUR            = "240"
+var string      TF_1DAY             = "1D"
+var string      TF_1WEEK            = "1W"
+var string      TF_1MONTH           = "1M"
+
+//------------------------------------------------------------------------------
+// Settings & Configuration
+//------------------------------------------------------------------------------
+
+// Group: Market Structure
+var g_ms = "Market Structure Settings"
+
+zigzagLength = input.int(14, "ZigZag Pivot Length", minval = 1, group = g_ms,
+  tooltip = "The number of bars used to detect swing highs and lows for market structure analysis")
+
+msColor = input.bool(true, "Colored MS Lines", group = g_ms,
+  tooltip = "Color market structure lines based on trend direction")
+
+showMSLabels = input.bool(true, "Show MS Labels", group = g_ms,
+  tooltip = "Display labels showing market structure points (BOS, CHoCH)")
+
+// Group: Fair Value Gaps
+var g_fvg = "Fair Value Gap Settings"
+
+enableFVG = input.bool(true, "Enable Fair Value Gaps", group = g_fvg)
+
+fvgExtension = input.string("Right", "FVG Extension",
+  options = ["Left", "Right", "Both"], group = g_fvg,
+  tooltip = "Direction to extend Fair Value Gap boxes")
+
+showFVGLabels = input.bool(true, "Show FVG Labels", group = g_fvg)
+
+fvgStyle = input.string("Solid", "FVG Box Style",
+  options = ["Solid", "Dashed", "Dotted"], group = g_fvg)
+
+// Group: Timeframe
+var g_tf = "Multi-Timeframe Analysis"
+
+enableMTF = input.bool(false, "Enable Multi-Timeframe", group = g_tf)
+
+higherTF = input.timeframe("4H", "Higher Timeframe", group = g_tf)
+
+// Group: Display
+var g_display = "Display Settings"
+
+maxBoxes = input.int(50, "Maximum Boxes", minval = 1, maxval = 100, group = g_display)
+
+lineWidth = input.int(2, "Line Width", minval = 1, maxval = 5, group = g_display)
+
+labelSize = input.string(SIZE_SMALL, "Label Size",
+  options = [SIZE_AUTO, SIZE_TINY, SIZE_SMALL, SIZE_NORMAL, SIZE_LARGE, SIZE_HUGE],
+  group = g_display)
+
+transparency = input.int(80, "Transparency", minval = 0, maxval = 100, group = g_display)
+
+//------------------------------------------------------------------------------
+// Helper Functions
+//------------------------------------------------------------------------------
+
+// Function to get label size
+f_get_label_size() =>
+    switch labelSize
+        SIZE_AUTO => size.auto
+        SIZE_TINY => size.tiny
+        SIZE_SMALL => size.small
+        SIZE_NORMAL => size.normal
+        SIZE_LARGE => size.large
+        SIZE_HUGE => size.huge
+        => size.small
+
+// Function to get line style
+f_get_line_style() =>
+    switch fvgStyle
+        "Solid" => line.style_solid
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        => line.style_solid
+
+// Function to determine trend
+f_get_trend(prev_high, curr_high, prev_low, curr_low) =>
+    if curr_high > prev_high and curr_low > prev_low
+        UP_TREND
+    else if curr_high < prev_high and curr_low < prev_low
+        DOWN_TREND
+    else
+        NO_TREND
+
+//------------------------------------------------------------------------------
+// ZigZag & Pivot Detection
+//------------------------------------------------------------------------------
+
+// Pivot High and Low detection
+pivotHigh = ta.pivothigh(high, zigzagLength, zigzagLength)
+pivotLow = ta.pivotlow(low, zigzagLength, zigzagLength)
+
+// Variables to store pivot values and indices
+var float lastPivotHigh = na
+var int lastPivotHighBar = na
+var float lastPivotLow = na
+var int lastPivotLowBar = na
+
+var float prevPivotHigh = na
+var int prevPivotHighBar = na
+var float prevPivotLow = na
+var int prevPivotLowBar = na
+
+// Update pivot values
+if not na(pivotHigh)
+    prevPivotHigh := lastPivotHigh
+    prevPivotHighBar := lastPivotHighBar
+    lastPivotHigh := pivotHigh
+    lastPivotHighBar := bar_index - zigzagLength
+
+if not na(pivotLow)
+    prevPivotLow := lastPivotLow
+    prevPivotLowBar := lastPivotLowBar
+    lastPivotLow := pivotLow
+    lastPivotLowBar := bar_index - zigzagLength
+
+//------------------------------------------------------------------------------
+// Market Structure Analysis
+//------------------------------------------------------------------------------
+
+// Variables for market structure
+var string currentTrend = NO_TREND
+var bool bosOccurred = false
+var bool chochOccurred = false
+
+// Detect Break of Structure (BOS) and Change of Character (CHoCH)
+if not na(lastPivotHigh) and not na(prevPivotHigh) and not na(lastPivotLow) and not na(prevPivotLow)
+
+    // Higher High and Higher Low = Bullish BOS
+    if lastPivotHigh > prevPivotHigh and lastPivotLow > prevPivotLow
+        if currentTrend != UP_TREND
+            chochOccurred := true
+            currentTrend := UP_TREND
+        else
+            bosOccurred := true
+
+    // Lower High and Lower Low = Bearish BOS
+    else if lastPivotHigh < prevPivotHigh and lastPivotLow < prevPivotLow
+        if currentTrend != DOWN_TREND
+            chochOccurred := true
+            currentTrend := DOWN_TREND
+        else
+            bosOccurred := true
+
+//------------------------------------------------------------------------------
+// Drawing Market Structure Lines
+//------------------------------------------------------------------------------
+
+// Draw zigzag lines
+if not na(lastPivotHigh) and not na(prevPivotHigh) and msColor
+    lineColor = currentTrend == UP_TREND ? BULLISH_COLOR :
+                currentTrend == DOWN_TREND ? BEARISH_COLOR : NEUTRAL_COLOR
+
+    if not na(prevPivotHighBar)
+        line.new(x1 = prevPivotHighBar, y1 = prevPivotHigh,
+                 x2 = lastPivotHighBar, y2 = lastPivotHigh,
+                 color = lineColor, width = lineWidth, extend = extend.none)
+
+if not na(lastPivotLow) and not na(prevPivotLow) and msColor
+    lineColor = currentTrend == UP_TREND ? BULLISH_COLOR :
+                currentTrend == DOWN_TREND ? BEARISH_COLOR : NEUTRAL_COLOR
+
+    if not na(prevPivotLowBar)
+        line.new(x1 = prevPivotLowBar, y1 = prevPivotLow,
+                 x2 = lastPivotLowBar, y2 = lastPivotLow,
+                 color = lineColor, width = lineWidth, extend = extend.none)
+
+// Draw BOS and CHoCH labels
+if showMSLabels
+    if bosOccurred
+        label.new(x = bar_index, y = currentTrend == UP_TREND ? low : high,
+                  text = "BOS", style = currentTrend == UP_TREND ? label.style_label_up : label.style_label_down,
+                  color = currentTrend == UP_TREND ? BULLISH_COLOR : BEARISH_COLOR,
+                  textcolor = color.white, size = f_get_label_size())
+
+    if chochOccurred
+        label.new(x = bar_index, y = currentTrend == UP_TREND ? low : high,
+                  text = "CHoCH", style = currentTrend == UP_TREND ? label.style_label_up : label.style_label_down,
+                  color = color.yellow, textcolor = color.black, size = f_get_label_size())
+
+//------------------------------------------------------------------------------
+// Fair Value Gap Detection
+//------------------------------------------------------------------------------
+
+if enableFVG
+    // Bullish FVG: Gap between high[2] and low[0] with no overlap on high[1] and low[1]
+    bullishFVG = low > high[2] and high[1] < high[2] and low[1] > low
+
+    // Bearish FVG: Gap between low[2] and high[0] with no overlap on high[1] and low[1]
+    bearishFVG = high < low[2] and low[1] > low[2] and high[1] < high
+
+    // Draw Bullish FVG
+    if bullishFVG
+        fvgTop = low
+        fvgBottom = high[2]
+
+        if showFVGLabels
+            label.new(x = bar_index, y = fvgTop, text = "Bull FVG",
+                      style = label.style_label_down, color = color.new(BULLISH_COLOR, 50),
+                      textcolor = color.white, size = f_get_label_size())
+
+        // Create FVG box
+        boxLeft = switch fvgExtension
+            "Left" => bar_index - 20
+            "Right" => bar_index
+            "Both" => bar_index - 10
+            => bar_index
+
+        boxRight = switch fvgExtension
+            "Left" => bar_index
+            "Right" => bar_index + 20
+            "Both" => bar_index + 10
+            => bar_index + 20
+
+        box.new(left = boxLeft, top = fvgTop, right = boxRight, bottom = fvgBottom,
+                bgcolor = color.new(BULLISH_COLOR, transparency), border_color = BULLISH_COLOR,
+                border_width = lineWidth, border_style = f_get_line_style())
+
+    // Draw Bearish FVG
+    if bearishFVG
+        fvgTop = low[2]
+        fvgBottom = high
+
+        if showFVGLabels
+            label.new(x = bar_index, y = fvgBottom, text = "Bear FVG",
+                      style = label.style_label_up, color = color.new(BEARISH_COLOR, 50),
+                      textcolor = color.white, size = f_get_label_size())
+
+        // Create FVG box
+        boxLeft = switch fvgExtension
+            "Left" => bar_index - 20
+            "Right" => bar_index
+            "Both" => bar_index - 10
+            => bar_index
+
+        boxRight = switch fvgExtension
+            "Left" => bar_index
+            "Right" => bar_index + 20
+            "Both" => bar_index + 10
+            => bar_index + 20
+
+        box.new(left = boxLeft, top = fvgTop, right = boxRight, bottom = fvgBottom,
+                bgcolor = color.new(BEARISH_COLOR, transparency), border_color = BEARISH_COLOR,
+                border_width = lineWidth, border_style = f_get_line_style())
+
+//------------------------------------------------------------------------------
+// Multi-Timeframe Analysis (Optional)
+//------------------------------------------------------------------------------
+
+// Higher timeframe market structure
+if enableMTF
+    [htfTrend, htfBOS, htfCHoCH] = request.security(syminfo.tickerid, higherTF,
+        [currentTrend, bosOccurred, chochOccurred], lookahead = barmerge.lookahead_off)
+
+    // Display HTF information
+    var table htfTable = table.new(position.top_right, 2, 3, bgcolor = color.new(color.white, 90),
+                                   border_width = 1, border_color = color.gray)
+
+    if barstate.islast
+        table.cell(htfTable, 0, 0, "HTF Trend", text_color = color.black, text_size = size.small)
+        table.cell(htfTable, 1, 0, str.tostring(htfTrend), text_color = color.black, text_size = size.small)
+
+        table.cell(htfTable, 0, 1, "HTF BOS", text_color = color.black, text_size = size.small)
+        table.cell(htfTable, 1, 1, str.tostring(htfBOS), text_color = color.black, text_size = size.small)
+
+        table.cell(htfTable, 0, 2, "HTF CHoCH", text_color = color.black, text_size = size.small)
+        table.cell(htfTable, 1, 2, str.tostring(htfCHoCH), text_color = color.black, text_size = size.small)
+
+//------------------------------------------------------------------------------
+// Alerts
+//------------------------------------------------------------------------------
+
+// Market Structure Alerts
+alertcondition(bosOccurred, title = "Break of Structure", message = "BOS occurred: {{ticker}} on {{timeframe}}")
+alertcondition(chochOccurred, title = "Change of Character", message = "CHoCH occurred: {{ticker}} on {{timeframe}}")
+
+// FVG Alerts
+alertcondition(enableFVG and (bullishFVG or bearishFVG), title = "Fair Value Gap",
+               message = "FVG detected: {{ticker}} on {{timeframe}}")
+
+//------------------------------------------------------------------------------
+// Plotting (for data export and additional analysis)
+//------------------------------------------------------------------------------
+
+// Plot trend for external analysis
+plot(currentTrend == UP_TREND ? 1 : currentTrend == DOWN_TREND ? -1 : 0,
+     title = "Market Structure Trend", color = color.new(color.gray, 100), display = display.data_window)
+
+// Plot BOS and CHoCH signals
+plotshape(bosOccurred, title = "BOS Signal", location = location.belowbar,
+          color = color.blue, style = shape.triangleup, size = size.tiny)
+
+plotshape(chochOccurred, title = "CHoCH Signal", location = location.abovebar,
+          color = color.orange, style = shape.triangledown, size = size.tiny)
+
+// Background color for trend visualization
+bgcolor(currentTrend == UP_TREND ? color.new(BULLISH_COLOR, 95) :
+        currentTrend == DOWN_TREND ? color.new(BEARISH_COLOR, 95) : na,
+        title = "Trend Background")
+
+//------------------------------------------------------------------------------
+// End of Script
+//------------------------------------------------------------------------------

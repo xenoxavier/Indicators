@@ -1,0 +1,336 @@
+Supply & Demand Zones
+
+This indicator detects high-probability supply and demand zones using a multi-step smart money concept approach:
+
+Liquidity Sweep Detection: Identifies when price sweeps above a pivot high (supply setup) or below a pivot low (demand setup), capturing liquidity grabs by institutional traders.
+
+Displacement Confirmation: Requires a strong displacement candle (measured by ATR and body percentage) or fair value gap (FVG/imbalance) in the opposite direction after the sweep.
+
+Volume Confirmation: Optional filter ensures zones form only when volume exceeds the user-defined threshold, indicating institutional participation.
+
+Smart Filtering: Built-in logic prevents overlapping zones, enforces minimum spacing between signals, and requires confirmation bars to eliminate false signals.
+
+Zone Lifecycle Management: Zones are automatically removed when price closes through them with momentum. Breached zones can optionally "flip" to the opposite type when re-tested with strong displacement.
+
+✨ Key Features
+Clean Visual Display: Small "D" (Demand) and "S" (Supply) labels with shaded zone boxes
+Non-Repainting: All signals use confirmed historical data—no lookahead or repainting
+Volume Filter: Optional confirmation using volume spike detection
+Zone Flip Logic: Breached demand zones can become supply (and vice versa) when violated
+Overlap Prevention: Smart algorithm prevents clustered or duplicate zones
+Confirmation Delay: Configurable wait period after sweep to confirm genuine setups
+Customizable Inputs: Adjust pivot sensitivity, displacement thresholds, volume filters, and more
+Alert Ready: Built-in alert conditions for new supply and demand zone formations
+
+
+🎯 How to Add to Your Chart
+Favorite the Indicator: Click the star icon to add this script to your favorites
+Open Your Chart: Navigate to the asset and timeframe you want to trade (works best on 5m-1H intraday charts)
+Add Indicator: Click "Indicators" at the top, search for "Supply & Demand Zones (Smart Filtered)", and add to chart
+Customize Settings: Click the gear icon ⚙️ to adjust inputs based on your trading style and instrument volatility
+Set Alerts: Right-click the indicator name → "Add alert" → Select "Supply Zone" or "Demand Zone" conditions
+
+
+📖 How to Use
+Demand Zones (Green "D" Labels):
+Price swept below a swing low (liquidity grab)
+Strong bullish displacement or imbalance followed
+Trading Action: Look for LONG entries when price returns to the zone or on immediate continuation
+Stop Loss: Place just below the zone or sweep low
+Target: Next resistance level, supply zone, or risk-reward ratio target
+
+Supply Zones (Red "S" Labels):
+Price swept above a swing high (liquidity grab)
+Strong bearish displacement or imbalance followed
+Trading Action: Look for SHORT entries when price returns to the zone or on immediate continuation
+Stop Loss: Place just above the zone or sweep high
+Target: Next support level, demand zone, or risk-reward ratio target
+
+Flipped Zones (Orange Labels):
+Previous demand/supply zone was broken with strong momentum
+Zone has flipped polarity and may now act as the opposite type
+Trading Action: Exercise caution—wait for additional confirmation before trading flipped zones
+
+🔍 What to Look For
+High-Quality Setups:
+Zone forms with above-average volume (check volume filter is enabled)
+Clear liquidity sweep visible on the chart
+Strong displacement candle with large body percentage
+Zone aligns with overall market trend or key structure levels
+Multiple timeframe confirmation (check higher timeframe for context)
+
+
+Avoid These Setups:
+Zones forming in choppy, low-volume conditions
+Multiple overlapping zones in the same area (indicator filters these automatically)
+Zones that appear immediately after news events (set confirmation bars higher)
+Counter-trend zones without additional confluence
+
+
+⚙️ Recommended Settings by Timeframe
+
+5-Minute Charts (Scalping):
+Pivot Lookback: 3/3
+Min Displacement ATR: 0.9
+Confirmation Bars: 1
+Min Zone Spacing: 3-5 bars
+Volume Threshold: 1.2x
+
+15-Minute Charts (Intraday):
+Pivot Lookback: 4/4 (default)
+Min Displacement ATR: 1.0 (default)
+Confirmation Bars: 2 (default)
+Min Zone Spacing: 5-8 bars
+Volume Threshold: 1.2x
+
+1-Hour Charts (Swing Trading):
+Pivot Lookback: 5/5
+Min Displacement ATR: 1.2-1.5
+Confirmation Bars: 3
+Min Zone Spacing: 8-12 bars
+Volume Threshold: 1.3x
+
+💡 Trading Tips & Best Practices
+Combine with Price Action: Use this indicator alongside candlestick patterns, support/resistance, and trendlines for confirmation
+Multiple Timeframe Analysis: Check higher timeframes for overall bias and major zones
+Volume is Key: Enable volume filter to focus on institutional-backed moves
+Risk Management: Always use stop losses and proper position sizing
+Backtesting: Test settings on your preferred instruments and timeframes before live trading
+Context Matters: Consider market conditions, news events, and session times
+Wait for Confirmation: Don't rush entries—wait for price reaction at the zone
+
+
+⚠️ Important Disclaimers
+Educational Purpose Only: This indicator is provided for educational and informational purposes. It does not constitute financial advice, investment recommendations, or trading signals.
+No Guarantees: Past performance and backtested results do not guarantee future results. Trading involves substantial risk of loss.
+
+
+//@version=6
+indicator("Supply & Demand Zones", overlay=true, max_boxes_count=25, max_labels_count=15)
+// For educational purposes only – not financial advice.
+
+// ═══════════════════════════════════════════════════════════════
+// INPUTS - BALANCED FOR GENUINE SIGNALS
+// ═══════════════════════════════════════════════════════════════
+pivotLeft       = input.int(4, "Pivot Lookback Left", minval=1)
+pivotRight      = input.int(4, "Pivot Lookback Right", minval=1)
+minDisplaceATR  = input.float(1.0, "Min Displacement (ATR Multiple)", step=0.1)
+minBodyPercent  = input.float(55, "Min Body % for Displacement", step=5)
+maxZones        = input.int(8, "Max Zones to Display", minval=1)
+showLabels      = input.bool(true, "Show Zone Labels")
+deleteOnBreak   = input.bool(true, "Delete Zone When Broken")
+allowFlip       = input.bool(true, "Allow Zone Flip")
+
+// Smart filters
+useVolumeConfirm = input.bool(true, "Volume Confirmation", tooltip="Zone requires volume spike")
+volMultiplier   = input.float(1.2, "Volume Threshold", step=0.1)
+volLength       = input.int(20, "Volume MA Length")
+
+minZoneSpacing  = input.int(5, "Min Bars Between Zones", minval=2, tooltip="Prevents too many close zones")
+
+confirmationBars = input.int(2, "Confirmation Bars", minval=1, tooltip="Wait N bars after displacement to confirm")
+
+supplyColor     = input.color(color.new(color.red, 80), "Supply Zone Color")
+demandColor     = input.color(color.new(color.green, 80), "Demand Zone Color")
+flipColor       = input.color(color.new(color.orange, 80), "Flipped Zone Color")
+
+// ═══════════════════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════════════════
+atr14 = ta.atr(14)
+
+// Volume confirmation
+volMA = ta.sma(volume, volLength)
+volConfirmed = volume > (volMA * volMultiplier)
+
+// Pivot detection
+pivotHigh = ta.pivothigh(high, pivotLeft, pivotRight)
+pivotLow  = ta.pivotlow(low, pivotLeft, pivotRight)
+
+var float lastPivotHigh = na
+var float lastPivotLow  = na
+var int   lastPivotHighBar = na
+var int   lastPivotLowBar  = na
+
+if not na(pivotHigh)
+    lastPivotHigh := pivotHigh
+    lastPivotHighBar := bar_index - pivotRight
+
+if not na(pivotLow)
+    lastPivotLow := pivotLow
+    lastPivotLowBar := bar_index - pivotRight
+
+// ═══════════════════════════════════════════════════════════════
+// DISPLACEMENT & IMBALANCE (STRICTER)
+// ═══════════════════════════════════════════════════════════════
+candleBody = math.abs(close - open)
+candleRange = high - low
+bodyPercent = candleRange > 0 ? (candleBody / candleRange) * 100 : 0
+
+// Strong displacement
+isBullishDisplace = close > open and candleBody > (atr14 * minDisplaceATR) and bodyPercent >= minBodyPercent
+isBearishDisplace = close < open and candleBody > (atr14 * minDisplaceATR) and bodyPercent >= minBodyPercent
+
+// Imbalance (gap must be meaningful)
+bullishImbalance = low > high[2] and (low - high[2]) > (atr14 * 0.4)
+bearishImbalance = high < low[2] and (low[2] - high) > (atr14 * 0.4)
+
+// Combined move (must pass volume if enabled)
+bullishMove = (isBullishDisplace or bullishImbalance) and (not useVolumeConfirm or volConfirmed)
+bearishMove = (isBearishDisplace or bearishImbalance) and (not useVolumeConfirm or volConfirmed)
+
+// ═══════════════════════════════════════════════════════════════
+// ZONE STORAGE
+// ═══════════════════════════════════════════════════════════════
+var box[] zones = array.new_box()
+var string[] zoneTypes = array.new_string()
+var float[] zoneTops = array.new_float()
+var float[] zoneBottoms = array.new_float()
+var int[] zoneCreatedBars = array.new_int()
+
+var int lastDemandZoneBar = na
+var int lastSupplyZoneBar = na
+
+// ═══════════════════════════════════════════════════════════════
+// OVERLAP CHECK (MODERATE)
+// ═══════════════════════════════════════════════════════════════
+isOverlapping(newTop, newBottom) =>
+    overlaps = false
+    if array.size(zones) > 0
+        for i = 0 to array.size(zones) - 1
+            existingTop = array.get(zoneTops, i)
+            existingBottom = array.get(zoneBottoms, i)
+            // Reject if significant overlap (>50%)
+            overlapHeight = math.min(newTop, existingTop) - math.max(newBottom, existingBottom)
+            newHeight = newTop - newBottom
+            if overlapHeight > 0 and overlapHeight > (newHeight * 0.5)
+                overlaps := true
+                break
+    overlaps
+
+// ═══════════════════════════════════════════════════════════════
+// DEMAND ZONE: Sweep + Bullish Move + Filters
+// ═══════════════════════════════════════════════════════════════
+sweepLow = not na(lastPivotLow) and low < lastPivotLow and bar_index > (lastPivotLowBar + pivotRight + confirmationBars)
+demandZoneValid = sweepLow and bullishMove and not isOverlapping(high, low)
+
+// Check spacing from last demand zone
+if demandZoneValid and not na(lastDemandZoneBar)
+    demandZoneValid := (bar_index - lastDemandZoneBar) >= minZoneSpacing
+
+if demandZoneValid
+    demandBox = box.new(left=bar_index, top=high, right=bar_index + 50, bottom=low, border_color=color.new(color.green, 30), bgcolor=demandColor, text="", text_color=color.green, text_size=size.tiny)
+    array.unshift(zones, demandBox)
+    array.unshift(zoneTypes, "demand")
+    array.unshift(zoneTops, high)
+    array.unshift(zoneBottoms, low)
+    array.unshift(zoneCreatedBars, bar_index)
+    
+    if showLabels
+        label.new(bar_index, low, "D", color=color.new(color.green, 0), textcolor=color.white, style=label.style_label_up, size=size.small)
+    
+    lastDemandZoneBar := bar_index
+
+// ═══════════════════════════════════════════════════════════════
+// SUPPLY ZONE: Sweep + Bearish Move + Filters
+// ═══════════════════════════════════════════════════════════════
+sweepHigh = not na(lastPivotHigh) and high > lastPivotHigh and bar_index > (lastPivotHighBar + pivotRight + confirmationBars)
+supplyZoneValid = sweepHigh and bearishMove and not isOverlapping(high, low)
+
+// Check spacing from last supply zone
+if supplyZoneValid and not na(lastSupplyZoneBar)
+    supplyZoneValid := (bar_index - lastSupplyZoneBar) >= minZoneSpacing
+
+if supplyZoneValid
+    supplyBox = box.new(left=bar_index, top=high, right=bar_index + 50, bottom=low, border_color=color.new(color.red, 30), bgcolor=supplyColor, text="", text_color=color.red, text_size=size.tiny)
+    array.unshift(zones, supplyBox)
+    array.unshift(zoneTypes, "supply")
+    array.unshift(zoneTops, high)
+    array.unshift(zoneBottoms, low)
+    array.unshift(zoneCreatedBars, bar_index)
+    
+    if showLabels
+        label.new(bar_index, high, "S", color=color.new(color.red, 0), textcolor=color.white, style=label.style_label_down, size=size.small)
+    
+    lastSupplyZoneBar := bar_index
+
+// ═══════════════════════════════════════════════════════════════
+// ZONE MITIGATION & FLIP LOGIC
+// ═══════════════════════════════════════════════════════════════
+if array.size(zones) > 0
+    i = 0
+    while i < array.size(zones)
+        currentBox = array.get(zones, i)
+        zoneType = array.get(zoneTypes, i)
+        zoneTop = array.get(zoneTops, i)
+        zoneBottom = array.get(zoneBottoms, i)
+        
+        shouldDelete = false
+        shouldFlip = false
+        
+        if zoneType == "demand"
+            // Delete if broken with strong bearish close
+            if close < zoneBottom and deleteOnBreak and bearishMove
+                shouldDelete := true
+            // Flip if broken and strong bearish displacement
+            else if close < zoneBottom and allowFlip and isBearishDisplace and volConfirmed
+                shouldFlip := true
+        
+        if zoneType == "supply"
+            // Delete if broken with strong bullish close
+            if close > zoneTop and deleteOnBreak and bullishMove
+                shouldDelete := true
+            // Flip if broken and strong bullish displacement
+            else if close > zoneTop and allowFlip and isBullishDisplace and volConfirmed
+                shouldFlip := true
+        
+        if shouldFlip
+            box.delete(currentBox)
+            if zoneType == "demand"
+                newBox = box.new(left=box.get_left(currentBox), top=zoneTop, right=bar_index + 50, bottom=zoneBottom, border_color=color.new(color.orange, 30), bgcolor=flipColor, text="", text_color=color.orange, text_size=size.tiny)
+                array.set(zones, i, newBox)
+                array.set(zoneTypes, i, "supply")
+                label.new(bar_index, high, "S", color=color.new(color.orange, 0), textcolor=color.white, style=label.style_label_down, size=size.small)
+            else
+                newBox = box.new(left=box.get_left(currentBox), top=zoneTop, right=bar_index + 50, bottom=zoneBottom, border_color=color.new(color.orange, 30), bgcolor=flipColor, text="", text_color=color.orange, text_size=size.tiny)
+                array.set(zones, i, newBox)
+                array.set(zoneTypes, i, "demand")
+                label.new(bar_index, low, "D", color=color.new(color.orange, 0), textcolor=color.white, style=label.style_label_up, size=size.small)
+        
+        if shouldDelete
+            box.delete(currentBox)
+            array.remove(zones, i)
+            array.remove(zoneTypes, i)
+            array.remove(zoneTops, i)
+            array.remove(zoneBottoms, i)
+            array.remove(zoneCreatedBars, i)
+            i := i - 1
+        
+        i := i + 1
+
+// ═══════════════════════════════════════════════════════════════
+// LIMIT ZONES
+// ═══════════════════════════════════════════════════════════════
+while array.size(zones) > maxZones
+    oldBox = array.pop(zones)
+    if not na(oldBox)
+        box.delete(oldBox)
+    array.pop(zoneTypes)
+    array.pop(zoneTops)
+    array.pop(zoneBottoms)
+    array.pop(zoneCreatedBars)
+
+// ═══════════════════════════════════════════════════════════════
+// EXTEND ZONES
+// ═══════════════════════════════════════════════════════════════
+if array.size(zones) > 0
+    for i = 0 to array.size(zones) - 1
+        currentBox = array.get(zones, i)
+        if not na(currentBox)
+            box.set_right(currentBox, bar_index + 10)
+
+// ═══════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════
+alertcondition(supplyZoneValid, "Supply Zone", "New Supply Zone Detected")
+alertcondition(demandZoneValid, "Demand Zone", "New Demand Zone Detected")

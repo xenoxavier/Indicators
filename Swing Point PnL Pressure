@@ -1,0 +1,45 @@
+Swing Point PnL Pressure
+
+//@version=5
+indicator("Swing Point PnL Pressure", overlay=false)
+
+// Parameters
+swingLen   = input.int(5, "Swing Length")
+lookback   = input.int(50, "Number of swings")
+
+// Arrays to store swing points
+var float[] swingLows  = array.new_float()
+var float[] swingHighs = array.new_float()
+
+// Detect swings (only after enough bars)
+if bar_index >= swingLen * 2
+    lowPivot = ta.pivotlow(low, swingLen, swingLen)
+    highPivot = ta.pivothigh(high, swingLen, swingLen)
+
+    if not na(lowPivot)
+        array.unshift(swingLows, lowPivot)
+        if array.size(swingLows) > lookback
+            array.pop(swingLows)
+
+    if not na(highPivot)
+        array.unshift(swingHighs, highPivot)
+        if array.size(swingHighs) > lookback
+            array.pop(swingHighs)
+
+// Compute cumulative PnL (only if arrays have data)
+bullPnL = 0.0
+bearPnL = 0.0
+
+if array.size(swingLows) > 0
+    for i = 0 to array.size(swingLows) - 1
+        bullPnL += close - array.get(swingLows, i)
+
+if array.size(swingHighs) > 0
+    for i = 0 to array.size(swingHighs) - 1
+        bearPnL += array.get(swingHighs, i) - close
+
+// Plot curves
+plot(bullPnL, "Bull PnL", color=color.green)
+plot(bearPnL, "Bear PnL", color=color.red)
+regimeColor = bullPnL > bearPnL ? color.new(color.green, 90) : color.new(color.red, 90)
+bgcolor(regimeColor)

@@ -1,0 +1,116 @@
+VWAP TrendSignal
+
+//@version=6
+indicator(title="VWAP TrendSignal", shorttitle="VWAP TrendSignal", overlay=true, timeframe="", timeframe_gaps=true)
+
+// ───── VWAP SETTINGS ─────
+hideonDWM = input.bool(false, "Hide VWAP on 1D or Above", group="VWAP Settings")
+
+anchor = input.string(
+     "Session",
+     "Anchor Period",
+     options = ["Session","Week","Month","Quarter","Year","Decade","Century","Earnings","Dividends","Splits"],
+     group   = "VWAP Settings"
+)
+
+src    = input(hlc3, "Source", group="VWAP Settings")
+offset = input.int(0, "Offset", group="VWAP Settings", minval=0)
+
+// ───── LINE THICKNESS + SMOOTHING ─────
+lineWidth       = input.int(2, "Line Thickness", minval=1, maxval=5, group="VWAP Settings")
+slopeSmoothLen  = input.int(1, "Slope Smoothing Length", minval=1, maxval=50, group="VWAP Settings")
+
+// ───── COLORS ─────
+bullColor = input.color(color.yellow, "Bullish Color")
+bearColor = input.color(color.red,    "Bearish Color")
+
+// ───── VOLUME CHECK ─────
+cumVolume = ta.cum(volume)
+if barstate.islast and cumVolume == 0
+    runtime.error("No volume is provided by the data vendor.")
+
+// ───── CORPORATE ACTION ANCHORS ─────
+new_earnings  = request.earnings(syminfo.tickerid, earnings.actual,  barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_dividends = request.dividends(syminfo.tickerid, dividends.gross, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_split     = request.splits(syminfo.tickerid, splits.denominator, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+
+// ───── PERIOD LOGIC ─────
+isNewPeriod = switch anchor
+    "Earnings"  => not na(new_earnings)
+    "Dividends" => not na(new_dividends)
+    "Splits"    => not na(new_split)
+    "Session"   => timeframe.change("D")
+    "Week"      => timeframe.change("W")
+    "Month"     => timeframe.change("M")
+    "Quarter"   => timeframe.change("3M")
+    "Year"      => timeframe.change("12M")
+    "Decade"    => timeframe.change("12M") and year % 10 == 0
+    "Century"   => timeframe.change("12M") and year % 100 == 0
+    => false
+
+isEsdAnchor = anchor == "Earnings" or anchor == "Dividends" or anchor == "Splits"
+if na(src[1]) and not isEsdAnchor
+    isNewPeriod := true
+
+// ───── VWAP CALC ─────
+float vwapValue = na
+if not (hideonDWM and timeframe.isdwm)
+    [_vwap, _, _] = ta.vwap(src, isNewPeriod, 1)
+    vwapValue := _vwap
+
+// ───── OPTIONAL SLOPE SMOOTHING (FOR COLOR ONLY) ─────
+vwapSlopeSource = slopeSmoothLen > 1 ? ta.ema(vwapValue, slopeSmoothLen) : vwapValue
+
+// ───── SLOPE COLOR ─────
+slopeUp   = vwapSlopeSource > vwapSlopeSource[1]
+vwapColor = slopeUp ? bullColor : bearColor
+
+// ───── PLOT VWAP ─────
+plot(vwapValue, title="VWAP", color=vwapColor, offset=offset, linewidth=lineWidth)
+
+
+
+VWAP TrendSignal
+
+VWAP (Volume-Weighted Average Price) is the market’s true fair value — the benchmark institutions use to see when price is balanced, extended, or trending with real intent.
+Price often snaps back when it moves too far (mean reversion), and only shows genuine strength when it holds above or below VWAP.
+
+VWAP TrendSignal makes this insight effortless by color-coding VWAP direction:
+
+Yellow = VWAP rising → bullish pressure
+
+Red = VWAP falling → bearish pressure
+
+No bands. No noise. Just pure directional clarity.
+
+Anchor VWAP to the Session, Week, Month, Quarter, or Year, and tailor the Slope Smoothing Filter to your timeframe:
+
+1–2 smoothing → fast & reactive (1–5m scalping)
+
+3–5 smoothing → clean & stable (5–15m intraday)
+
+6–10 smoothing → slow flips (1H–4H swings)
+
+10–15 smoothing → macro bias only (Daily/Weekly)
+
+The line adapts to how you trade.
+
+How to Use It
+
+Mean Reversion
+When price stretches far from VWAP, expect pullbacks or snapbacks.
+
+Trend Direction
+Yellow supports long bias, red supports short bias.
+Simple, reliable, instantly visible.
+
+Balance Zones
+Price sitting near VWAP = compression, buildup, or chop.
+A perfect signal to wait or prepare for a breakout.
+
+Why It Works
+
+VWAP TrendSignal distills institutional logic into a clean, single-line tool.
+It shows fair value, trend slope, and balance all at once — making your chart clearer and your decisions faster.
+
+Once you get used to reading it, trading without it feels blind.
