@@ -1,0 +1,131 @@
+// QUANT ALPHA
+
+//@version=6
+indicator("Quant Master Supertrend [Regime + Z-Score Exits]", overlay=true, shorttitle="Quant Master")
+
+// ==========================================
+// 🔹 1. INPUTS & RISK MANAGEMENT
+// ==========================================
+group_strat = "Strategy Settings"
+st_len = input.int(10, "ATR Period", group=group_strat)
+st_mult = input.float(3.0, "ATR Multiplier", step=0.1, group=group_strat)
+use_vwap = input.bool(true, "Filter Entries with VWAP?", group=group_strat)
+
+group_exit = "Quant Exits (Mean Reversion)"
+use_zscore = input.bool(true, "Show Z-Score Overbought/Oversold Exits?", group=group_exit)
+z_len = input.int(20, "Z-Score Lookback", group=group_exit)
+z_thresh = input.float(2.0, "Standard Deviation Threshold (TP)", step=0.1, group=group_exit)
+
+group_risk = "Risk Calculator (Dashboard)"
+acct_size = input.float(10000, "Account Size ($)", group=group_risk)
+risk_per = input.float(1.0, "Risk per Trade (%)", step=0.1, group=group_risk)
+
+// ==========================================
+// 🔹 2. CALCULATIONS
+// ==========================================
+
+// --- A. The Supertrend (The Core Trend) ---
+[st_val, st_dir] = ta.supertrend(st_mult, st_len)
+
+// --- B. The VWAP (Institutional Anchor) ---
+vwap_val = ta.vwap(close)
+
+// --- C. The Market "Weather" (Regime Detection) ---
+// 1. Trend Strength (ADX)
+[_, _, adx] = ta.dmi(14, 14)
+// 2. Volatility Shock (ATR vs Avg ATR)
+atr = ta.atr(14)
+avg_atr = ta.sma(atr, 20)
+// bool is_volatile = atr > (avg_atr * 1.5) // High Volatility Warning
+// bool is_flat = adx < 20 // Low Trend Warning
+
+// Define Regime State
+// 0 = Normal, 1 = Volatile, 2 = Chop
+// int regime = is_volatile ? 1 : (is_flat ? 2 : 0)
+
+// --- D. Z-Score (Statistical Extension) ---
+// Formula: (Close - Mean) / StdDev
+mean_val = ta.sma(close, z_len)
+std_dev = ta.stdev(close, z_len)
+z_score = (close - mean_val) / std_dev
+
+// ==========================================
+// 🔹 3. LOGIC & FILTERS
+// ==========================================
+
+// Entry Conditions
+// bool vwap_filter_buy = use_vwap ? (close > vwap_val) : true
+// bool vwap_filter_sell = use_vwap ? (close < vwap_val) : true
+
+// Valid Entry: Supertrend Flip + Not Choppy + VWAP Agreement
+// bool long_entry = ta.crossover(st_dir, 0) and regime != 2 and vwap_filter_buy
+// bool short_entry = ta.crossunder(st_dir, 0) and regime != 2 and vwap_filter_sell
+
+// Exit Conditions (Take Profit on Extension)
+// If we are Long and Z-Score > Threshold, we are statistically overbought
+// bool tp_long = use_zscore and st_dir == -1 and z_score > z_thresh
+// If we are Short and Z-Score < -Threshold, we are statistically oversold
+// bool tp_short = use_zscore and st_dir == 1 and z_score < -z_thresh
+
+// ==========================================
+// 🔹 4. VISUALS & PLOTTING
+// ==========================================
+
+// Plot Supertrend Line
+// -1 is UP (green), 1 is DOWN (red)
+// color st_col = st_dir == -1 ? color.green : color.red
+plot(st_val, "Trend Line", color=st_col, linewidth=2)
+
+// Plot VWAP (Faint)
+plot(use_vwap ? vwap_val : na, "VWAP", color=color.new(color.orange, 50), linewidth=1)
+
+// Color Bars based on REGIME (The Weather)
+// Normal Trend = Green/Red
+// Volatile = Yellow (Caution)
+// Chop = Gray (Stay Out)
+// color bar_col = regime == 2 ? color.gray : regime == 1 ? color.yellow : st_dir == -1 ? color.green : color.red
+
+barcolor(bar_col, title="Regime Candles")
+
+// Plot Entry Signals
+plotshape(long_entry, "Buy Signal", shape.labelup, location.belowbar, color.green, 0, "QUANT\nBUY", color.white, size=size.small)
+plotshape(short_entry, "Sell Signal", shape.labeldown, location.abovebar, color.red, 0, "QUANT\nSELL", color.white, size=size.small)
+
+// Plot Take Profit Signals (Z-Score)
+// Uses purple triangles for TPs
+plotshape(tp_long, "Take Profit Long", shape.triangledown, location.abovebar, color.purple, 0, "TP", color.white, size=size.tiny)
+plotshape(tp_short, "Take Profit Short", shape.triangleup, location.belowbar, color.purple, 0, "TP", color.white, size=size.tiny)
+
+// ==========================================
+// 🔹 5. RISK DASHBOARD
+// ==========================================
+// Calculates dynamic position size based on the distance to the stop loss (Supertrend line)
+
+if barstate.islast
+    // Calculate Distance to Stop (float type declaration removed for v6 compatibility)
+    dist_to_stop = math.abs(close - st_val)
+    // Risk Amount in Dollars (float type declaration removed)
+    risk_amt = acct_size * (risk_per / 100)
+    // Recommended Position Size (Shares/Contracts) (float type declaration removed)
+    // Formula: Risk Amount / Distance to Stop
+    pos_size = dist_to_stop > 0 ? risk_amt / dist_to_stop : 0
+
+    // Uses top_right position, consistent with your image
+    var table panel = table.new(position.top_right, 2, 5, border_width=1)
+    
+    // Headers
+//     table.cell(panel, 0, 0, "MARKET WEATHER", bgcolor=color.new(color.blue, 30), text_color=color.white)
+    
+    // Regime Display (Uses Emojis 🚀⚠️💤)
+//     string reg_txt = regime == 1 ? "VOLATILE ⚠️" : (regime == 2 ? "CHOPPY 💤" : "TRENDING 🚀")
+//     color reg_bg = regime == 1 ? color.yellow : (regime == 2 ? color.gray : color.green)
+//     table.cell(panel, 0, 1, reg_txt, bgcolor=reg_bg, text_color=color.black)
+
+    // Z-Score Display
+//     table.cell(panel, 0, 2, "Deviation (Z): " + str.tostring(z_score, "#.##"), bgcolor=math.abs(z_score)>z_thresh ? color.purple : color.black, text_color=color.white)
+    
+    // Risk Calc Header
+//     table.cell(panel, 0, 3, "POSITION SIZING", bgcolor=color.new(color.blue, 30), text_color=color.white)
+    
+    // Position Size Recommendation
+//     table.cell(panel, 0, 4, "Buy/Sell: " + str.tostring(pos_size, "#.##") + " Units", bgcolor=color.black, text_color=color.white)

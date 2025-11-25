@@ -1,0 +1,541 @@
+// Etherium CME gaps multi-timeframe auto finder
+
+
+
+// This indicator is a powerful tool that automatically detects and visualizes price gaps (Gaps) in the Ethereum CME futures market across multiple timeframes and also provides alert functionality. Price gaps occur when the futures market is inactive for a certain period, often acting as potential support or resistance zones.
+
+// What is an Ethereum CME Gap?
+// CME (Chicago Mercantile Exchange) is one of the largest derivatives exchanges globally. The Ethereum CME futures market is closed on weekends and certain holidays. When the market reopens, a price difference may occur between the previous closing price and the new opening price, referred to as a "CME Gap."
+
+
+
+// Key Features of the Indicator
+// Multi-timeframe gap detection: Detects and displays gaps across 5m, 15m, 30m, 1h, 4h, 1d timeframes simultaneously.
+
+// Customizable CME Symbol: You can specify Ethereum CME futures symbols, such as ETH1!.
+
+
+// Two gap price display methods:
+// CME_price: Displays the gap based on the actual price levels in the CME futures market.
+
+// Chart_price: Adjusts the gap to match the price levels on the chart being viewed (e.g., spot market). This helps visualize the impact of futures gaps on the spot market.
+
+
+// Visual customization:
+// Individual color settings for bullish/bearish gap boxes for each timeframe.
+
+// Adjust the extension (display length) of gap boxes in bars.
+
+// Configure label display, position, text size, background, and text color.
+
+// Highlight significant gaps: Emphasize gaps above a specified percentage with a unique color and border thickness.
+
+// Alert functionality: Receive notifications when a gap is detected, with options to enable alerts only for specific timeframes.
+
+
+
+
+// Why CME Gaps Matter
+
+// Traders often consider CME gaps as significant price zones.
+
+// Gap Fill: Historical data shows that many gaps tend to get "filled" over time, meaning the price returns to the gap area, reaching the start or end point of the gap.
+// snapshot
+
+// Support/Resistance: Unfilled gaps can serve as potential support (Bullish Gap) or resistance (Bearish Gap) zones.
+
+// Bullish Gap: Occurs when the current opening price is higher than the previous closing price. Typically leaves an unfilled gap below (previous high), which can act as potential support.
+
+// Bearish Gap: Occurs when the current opening price is lower than the previous closing price. Typically leaves an unfilled gap above (previous low), which can act as potential resistance.
+
+
+
+
+// How to Use the Indicator
+// Add Indicator on TradingView: Click the "Indicators" button on the TradingView chart.
+
+// Find the indicator in "My Scripts" or "Invite-Only Scripts" and add it to the chart.
+
+// Adjust Settings: Once the indicator is added, click the settings (gear) icon to adjust inputs.
+
+// CME Symbol (ETH): ETH1! is typically the default symbol for Ethereum CME futures. Confirm based on your broker or data feed.
+
+// Min gap %: Set the minimum gap size in percentage; smaller gaps will not be displayed.
+
+// Select Exchanges to Display gap price: Choose between "CME_price" or "Chart_price." For viewing futures gaps on a spot chart, "Chart_price" is recommended.
+
+// Show Xm/h/d gap boxes: Select which timeframe gap boxes to display.
+
+// Color, Extension, Label settings: Customize the visual aspects of gap boxes and labels.
+
+// Highlight gap % (>=): Set the minimum percentage for highlighting significant gaps.
+
+// Enable Alerts: Choose whether to receive alerts when a gap is detected.
+
+// Alert Timeframe: Select whether alerts apply to all timeframes or specific ones only.
+
+
+
+
+// Chart Analysis
+
+// Once the indicator is applied, gap boxes for the selected timeframes appear on the chart.
+
+// Green shades indicate Bullish Gaps, and red shades indicate Bearish Gaps (default green can be customized, and bearish gap color can be set separately).
+
+// Highlighted gaps may carry higher significance and should be monitored carefully.
+
+// Potential trading opportunities can be explored when the price approaches or attempts to fill a gap.
+
+
+
+// Usage Strategies (Examples)
+// snapshot
+
+// Support/Resistance Confirmation: The lower boundary of a bullish gap can act as potential support, while the upper boundary of a bearish gap can act as potential resistance. Observe for reversals or breakouts when price reaches these areas.
+
+// Retracement Trading: Trade when the price returns to fill a gap after leaving it through a sharp move up or down.
+
+// Multi-timeframe Analysis: Gaps overlapping across multiple timeframes can form stronger support/resistance zones.
+
+
+
+
+// Considerations
+
+// * "Gap Filled" Condition: The indicator does not draw a gap if it determines that the gap has already been filled by the current bar’s low (bullish gap) or high (bearish gap).
+
+// * Tool Only: This indicator is a gap detection tool and should not be used alone for trading decisions. Always combine with other technical analysis tools and your trading strategy.
+
+// * Past Data ≠ Future Guarantee: Historical gap fill trends do not guarantee future occurrences.
+
+// This indicator allows effective tracking of Ethereum CME futures gaps and provides valuable insights for enhancing your trading strategy.
+
+
+
+
+// CODE
+
+//@version=5
+indicator("Etherium CME gaps multi-timeframe auto finder", overlay=true, max_boxes_count=500, max_labels_count=500, dynamic_requests=true)
+
+cme_sym = input.string("ETH1!", "CME Symbol (ETH)", tooltip="CME Ethereum Futures Symbol. Example: ETH1!")
+gap_thresh_pct = input.float(0.1, "Min gap %", minval=0.05)
+gap_calc_method = input.string("Chart_price", "Select Exchanges to Display gap price", options=["CME_price", "Chart_price"], tooltip="Selects whether gap boxes reflect raw CME prices or are adapted to the price level of the chart you are currently viewing.", confirm=true)
+
+show_5m_gaps = input.bool(true, "Show 5m gap boxes")
+show_15m_gaps = input.bool(true, "Show 15m gap boxes")
+show_30m_gaps = input.bool(true, "Show 30m gap boxes")
+show_1h_gaps = input.bool(true, "Show 1h gap boxes")
+show_4h_gaps = input.bool(true, "Show 4h gap boxes")
+show_1d_gaps = input.bool(true, "Show 1d gap boxes")
+
+col_5m_up = input.color(color.new(#00ff88, 50), "5m Bullish gaps color")
+col_5m_dn = input.color(color.new(#00ff88, 50), "5m Bearish gaps color")
+col_15m_up = input.color(color.new(#00ff88, 50), "15m Bullish gaps color")
+col_15m_dn = input.color(color.new(#00ff88, 50), "15m Bearish gaps color")
+col_30m_up = input.color(color.new(#00ff88, 50), "30m Bullish gaps color")
+col_30m_dn = input.color(color.new(#00ff88, 50), "30m Bearish gaps color")
+col_1h_up = input.color(color.new(#00ff88, 50), "1h Bullish gaps color")
+col_1h_dn = input.color(color.new(#00ff88, 50), "1h Bearish gaps color")
+col_4h_up = input.color(color.new(#00ff88, 50), "4h Bullish gaps color")
+col_4h_dn = input.color(color.new(#00ff88, 50), "4h Bearish gaps color")
+col_1d_up = input.color(color.new(#00ff88, 50), "1d Bullish gaps color")
+col_1d_dn = input.color(color.new(#00ff88, 50), "1d Bearish gaps color")
+
+ext_5m = input.int(270, "5m extension (Bars)", minval=1, maxval=1000)
+ext_15m = input.int(92, "15m extension (Bars)", minval=1, maxval=1000)
+ext_30m = input.int(46, "30m extension (Bars)", minval=1, maxval=1000)
+ext_1h = input.int(23, "1h extension (Bars)", minval=1, maxval=1000)
+ext_4h = input.int(11, "4h extension (Bars)", minval=1, maxval=1000)
+ext_1d = input.int(7, "1d extension (Bars)", minval=1, maxval=1000)
+
+show_lbls = input.bool(true, "Show labels")
+lbl_pos = input.string("label_upper_left", "Label position", options=["label_upper_left", "label_upper_right", "label_lower_left", "label_lower_right", "label_left", "label_right"])
+lbl_sz = input.string("normal", "Label text size", options=["tiny", "small", "normal", "large", "huge"])
+
+lbl_up_gap_bg_col = input.color(color.new(#ffffff, 90), "Bullish Gap Label Background Color")
+lbl_up_gap_txt_col = input.color(color.rgb(255, 255, 255, 70), "Bullish Gap Label Text Color")
+lbl_dn_gap_bg_col = input.color(color.new(#ffffff, 90), "Bearish Gap Label Background Color")
+lbl_dn_gap_txt_col = input.color(color.rgb(255, 255, 255, 70), "Bearish Gap Label Text Color")
+
+high_gap_thresh = input.float(0.5, "Highlight gap % (>=)", minval=0.1)
+high_lbl_bg_col = input.color(color.rgb(251, 255, 0, 90), "Highlight label background color")
+high_lbl_txt_col = input.color(color.rgb(255, 255, 255, 30), "Highlight label text color")
+high_box_col = input.color(color.rgb(255, 255, 0), "Highlight box color")
+high_brd_w = input.int(2, "Highlight box border width", minval=1, maxval=5)
+
+en_alerts = input.bool(true, "Enable Alerts")
+alert_tf = input.string("All", "Alert Timeframe", options=["All", "5min", "15min", "30min", "1hour", "4hour", "1day"])
+
+// f_get_lbl_style(s) =>
+//     switch s
+//         "label_upper_left"  => label.style_label_upper_left
+//         "label_upper_right" => label.style_label_upper_right
+//         "label_lower_left"  => label.style_label_lower_left
+//         "label_lower_right" => label.style_label_lower_right
+//         "label_left"        => label.style_label_left
+//         "label_right"       => label.style_label_right
+//         => label.style_label_upper_left
+
+// f_get_lbl_size(s) =>
+//     switch s
+//         "tiny"  => size.tiny
+//         "small" => size.small
+//         "normal" => size.normal
+//         "large" => size.large
+//         "huge"  => size.huge
+//         => size.normal
+
+// f_det_draw_gap(tf_str, p_h, p_m, c_h, c_m, col_up, col_dn, ext_b) =>
+    [cme_cls, cme_high, cme_low, cme_open, cme_time] = request.security(cme_sym, tf_str, [close, high, low, open, time], lookahead=barmerge.lookahead_on)
+    
+    [cme_curr_tf_high, cme_curr_tf_low] = request.security(cme_sym, tf_str, [high[0], low[0]], lookahead=barmerge.lookahead_on)
+
+    [curr_cls, curr_high, curr_low, curr_open, curr_time] = request.security(syminfo.tickerid, tf_str, [close, high, low, open, time], lookahead=barmerge.lookahead_on)
+
+    var int gap_det_idx = na
+    var float cme_gap_h_p = na
+    var float cme_gap_l_p = na
+    var float det_gap_pct = na
+    var bool is_gap = false 
+    var bool is_up_gap_b = false
+    
+//     int h_prev = hour(cme_time[1], "GMT+9")
+//     int m_prev = minute(cme_time[1], "GMT+9")
+//     bool is_prev_bar_t = (h_prev == p_h and m_prev == p_m)
+
+//     int h_curr = hour(cme_time[0], "GMT+9")
+//     int m_curr = minute(cme_time[0], "GMT+9")
+
+    is_curr_bar_t = (h_curr == c_h and m_curr == c_m) 
+
+    if is_curr_bar_t and is_prev_bar_t and not na(cme_cls[1])
+//         float cme_curr_tf_open = cme_open[0]
+//         float cme_prev_tf_cls = cme_cls[1]
+//         float cme_prev_tf_high = cme_high[1]
+//         float cme_prev_tf_low = cme_low[1]
+//         float curr_bar_low = low
+//         float curr_bar_high = high
+
+//         float gap_tmp_h = na 
+//         float gap_tmp_l = na
+//         bool is_true_g = false 
+
+        if cme_curr_tf_open > cme_prev_tf_cls and cme_prev_tf_high < cme_curr_tf_open
+//             gap_tmp_h := cme_curr_tf_low
+//             gap_tmp_l := cme_prev_tf_high
+//             is_true_g := true
+//             is_up_gap_b := true
+
+//         else if cme_curr_tf_open < cme_prev_tf_cls and cme_prev_tf_low > cme_curr_tf_open
+//             gap_tmp_h := cme_prev_tf_low
+//             gap_tmp_l := cme_curr_tf_high
+//             is_true_g := true
+//             is_up_gap_b := false
+
+        if is_true_g
+//             bool gap_filled = if is_up_gap_b
+//                 curr_bar_low <= cme_prev_tf_high
+//             else
+//                 curr_bar_high >= cme_prev_tf_low
+
+//             float gap_amt = math.abs(gap_tmp_h - gap_tmp_l)
+//             float gap_pct = (gap_amt / cme_prev_tf_cls) * 100 
+
+            if gap_amt > 0 and gap_pct >= gap_thresh_pct and not gap_filled
+//                 gap_det_idx := bar_index
+//                 cme_gap_h_p := gap_tmp_h
+//                 cme_gap_l_p := gap_tmp_l
+//                 det_gap_pct := gap_pct
+//                 is_gap := true
+//             else
+//                 gap_det_idx := na
+//                 cme_gap_h_p := na
+//                 cme_gap_l_p := na
+//                 det_gap_pct := na
+//                 is_gap := false
+//         else
+//             gap_det_idx := na
+//             cme_gap_h_p := na
+//             cme_gap_l_p := na
+//             det_gap_pct := na
+//             is_gap := false
+//     else
+//         is_gap := false
+    
+//     float final_gap_h_p = cme_gap_h_p
+//     float final_gap_l_p = cme_gap_l_p
+
+    if gap_calc_method == "Chart_price" and not na(cme_gap_h_p) and not na(cme_gap_l_p) and not na(curr_open[0]) and not na(cme_open[0])
+//         float price_diff_at_gap = curr_open[0] - cme_open[0]
+        
+//         final_gap_h_p := cme_gap_h_p + price_diff_at_gap
+//         final_gap_l_p := cme_gap_l_p + price_diff_at_gap
+
+    if not na(gap_det_idx) and bar_index == gap_det_idx and not na(final_gap_h_p) and not na(final_gap_l_p)
+//         int box_l_idx = bar_index - 1
+//         int box_r_idx = bar_index + ext_b - 1
+        
+        box_col = if is_up_gap_b
+//             col_up
+//         else
+//             col_dn
+
+        box_brd_col = if det_gap_pct >= high_gap_thresh
+//             color.new(high_box_col, 70)
+//         else
+//             color.new(box_col, 70)
+        
+        box_bg_col = if det_gap_pct >= high_gap_thresh
+//             color.new(high_box_col, 90)
+//         else
+//             color.new(box_col, 90)
+
+        box_brd_w = if det_gap_pct >= high_gap_thresh
+//             high_brd_w
+//         else
+//             1
+
+//         box.new(left=box_l_idx, bottom=final_gap_l_p, right=box_r_idx, top=final_gap_h_p,
+                 border_color=box_brd_col, border_width=box_brd_w, bgcolor=box_bg_col, 
+                 xloc=xloc.bar_index)
+
+        if show_lbls
+//             string lbl_full_txt = str.format("{0,number,#,###.##}", det_gap_pct) + "%"
+            
+//             color current_lbl_bg_col = na
+//             color current_lbl_txt_col = na
+
+            if det_gap_pct >= high_gap_thresh
+//                 current_lbl_bg_col := high_lbl_bg_col
+//                 current_lbl_txt_col := high_lbl_txt_col
+//             else if is_up_gap_b
+//                 current_lbl_bg_col := lbl_up_gap_bg_col
+//                 current_lbl_txt_col := lbl_up_gap_txt_col
+//             else
+//                 current_lbl_bg_col := lbl_dn_gap_bg_col
+//                 current_lbl_txt_col := lbl_dn_gap_txt_col
+            
+//             label.new(x=box_l_idx, y=(final_gap_h_p + final_gap_l_p) / 2, text=lbl_full_txt, 
+                      xloc=xloc.bar_index, yloc=yloc.price, color=current_lbl_bg_col,
+                      textcolor=current_lbl_txt_col, style=f_get_lbl_style(lbl_pos), size=f_get_lbl_size(lbl_sz), textalign=text.align_left)
+    
+//     is_gap
+
+// f_det_draw_daily_gap(col_up, col_dn, ext_b) =>
+    [p_d_cls_cme, p_d_high_cme, p_d_low_cme, c_d_open_cme, p_d_ts_cme, c_d_ts_cme] = request.security(cme_sym, "D", [close[1], high[1], low[1], open[0], time[1], time[0]], lookahead=barmerge.lookahead_on)
+    
+    [cme_curr_d_high, cme_curr_d_low] = request.security(cme_sym, "D", [high[0], low[0]], lookahead=barmerge.lookahead_on)
+
+    [p_d_cls_curr, p_d_high_curr, p_d_low_curr, c_d_open_curr, p_d_ts_curr, c_d_ts_curr] = request.security(syminfo.tickerid, "D", [close[1], high[1], low[1], open[0], time[1], time[0]], lookahead=barmerge.lookahead_on)
+    
+    [curr_d_high, curr_d_low] = request.security(syminfo.tickerid, "D", [high[0], low[0]], lookahead=barmerge.lookahead_on)
+
+
+    var int daily_gap_det_idx = na
+    var float cme_d_gap_h_p = na 
+    var float cme_d_gap_l_p = na
+    var float d_det_gap_pct = na 
+    var bool is_gap_d = false 
+    var bool is_up_gap_d = false
+
+//     bool new_cme_daily_bar = ta.change(c_d_ts_cme)
+
+    if new_cme_daily_bar and not na(p_d_cls_cme) 
+//         float gap_tmp_h = na 
+//         float gap_tmp_l = na
+//         bool is_true_g = false 
+
+        if c_d_open_cme > p_d_cls_cme and p_d_high_cme < c_d_open_cme
+//             gap_tmp_h := cme_curr_d_low
+//             gap_tmp_l := p_d_high_cme
+//             is_true_g := true
+//             is_up_gap_d := true
+            
+//         else if c_d_open_cme < p_d_cls_cme and p_d_low_cme > c_d_open_cme
+//             gap_tmp_h := p_d_low_cme
+//             gap_tmp_l := cme_curr_d_high
+//             is_true_g := true
+//             is_up_gap_d := false
+
+        if is_true_g
+//             bool gap_filled = if is_up_gap_d
+//                 curr_d_low <= p_d_high_cme
+//             else
+//                 curr_d_high >= p_d_low_cme
+
+//             float gap_amt = math.abs(gap_tmp_h - gap_tmp_l)
+//             float gap_pct = (gap_amt / p_d_cls_cme) * 100 
+
+            if gap_amt > 0 and gap_pct >= gap_thresh_pct and not gap_filled
+//                 daily_gap_det_idx := bar_index
+//                 cme_d_gap_h_p := gap_tmp_h
+//                 cme_d_gap_l_p := gap_tmp_l
+//                 d_det_gap_pct := gap_pct 
+//                 is_gap_d := true
+//             else
+//                 daily_gap_det_idx := na
+//                 cme_d_gap_h_p := na
+//                 cme_d_gap_l_p := na
+//                 d_det_gap_pct := na
+//                 is_gap_d := false
+//         else
+//             daily_gap_det_idx := na
+//             cme_d_gap_h_p := na
+//             cme_d_gap_l_p := na
+//             d_det_gap_pct := na
+//             is_gap_d := false
+//     else
+//         is_gap_d := false
+    
+//     float final_d_gap_h_p = cme_d_gap_h_p
+//     float final_d_gap_l_p = cme_d_gap_l_p
+
+    if gap_calc_method == "Chart_price" and not na(cme_d_gap_h_p) and not na(cme_d_gap_l_p) and not na(c_d_open_curr) and not na(c_d_open_cme)
+//         float price_diff_at_gap = c_d_open_curr - c_d_open_cme
+        
+//         final_d_gap_h_p := cme_d_gap_h_p + price_diff_at_gap
+//         final_d_gap_l_p := cme_d_gap_l_p + price_diff_at_gap
+
+    if not na(daily_gap_det_idx) and bar_index == daily_gap_det_idx and not na(final_d_gap_h_p) and not na(final_d_gap_l_p)
+//         int box_l_idx = bar_index - 1
+//         int box_r_idx = bar_index + ext_b - 1
+        
+        box_col = if is_up_gap_d
+//             col_up
+//         else
+//             col_dn
+
+        box_brd_col = if d_det_gap_pct >= high_gap_thresh
+//             color.new(high_box_col, 70)
+//         else
+//             color.new(box_col, 70)
+        
+        box_bg_col = if d_det_gap_pct >= high_gap_thresh
+//             color.new(high_box_col, 90)
+//         else
+//             color.new(box_col, 90)
+
+        box_brd_w = if d_det_gap_pct >= high_gap_thresh
+//             high_brd_w
+//         else
+//             1
+
+//         box.new(left=box_l_idx, bottom=final_d_gap_l_p, right=box_r_idx, top=final_d_gap_h_p,
+                 border_color=box_brd_col, border_width=box_brd_w, bgcolor=box_bg_col, 
+                 xloc=xloc.bar_index)
+
+        if show_lbls
+//             string lbl_full_txt = str.format("{0,number,#,###.##}", d_det_gap_pct) + "%"
+            
+//             color current_lbl_bg_col = na
+//             color current_lbl_txt_col = na
+
+            if d_det_gap_pct >= high_gap_thresh
+//                 current_lbl_bg_col := high_lbl_bg_col
+//                 current_lbl_txt_col := high_lbl_txt_col
+//             else if is_up_gap_d
+//                 current_lbl_bg_col := lbl_up_gap_bg_col
+//                 current_lbl_txt_col := lbl_up_gap_txt_col
+//             else
+//                 current_lbl_bg_col := lbl_dn_gap_bg_col
+//                 current_lbl_txt_col := lbl_dn_gap_txt_col
+            
+//             label.new(x=box_l_idx, y=(final_d_gap_h_p + final_d_gap_l_p) / 2, text=lbl_full_txt, 
+                      xloc=xloc.bar_index, yloc=yloc.price, color=current_lbl_bg_col,
+                      textcolor=current_lbl_txt_col, style=f_get_lbl_style(lbl_pos), size=f_get_lbl_size(lbl_sz), textalign=text.align_left)
+    
+//     is_gap_d
+
+var bool gap_5m_det_any = false 
+var bool gap_15m_det_any = false 
+var bool gap_30m_det_any = false 
+var bool gap_1h_det_any = false 
+var bool gap_4h_det_any = false 
+var bool gap_1d_det = false
+
+if show_5m_gaps and timeframe.period == "5" 
+//     bool g_5m_0655_0800_tmp = f_det_draw_gap("5", 6, 55, 8, 0, col_5m_up, col_5m_dn, ext_5m)
+//     bool g_5m_0555_0700_tmp = f_det_draw_gap("5", 5, 55, 7, 0, col_5m_up, col_5m_dn, ext_5m)
+//     bool g_5m_0555_0800_tmp = f_det_draw_gap("5", 5, 55, 8, 0, col_5m_up, col_5m_dn, ext_5m) 
+//     bool g_5m_0655_0700_tmp = f_det_draw_gap("5", 6, 55, 7, 0, col_5m_up, col_5m_dn, ext_5m) 
+//     gap_5m_det_any := g_5m_0555_0700_tmp or g_5m_0555_0800_tmp or g_5m_0655_0700_tmp or g_5m_0655_0800_tmp
+
+if show_15m_gaps and timeframe.period == "15" 
+//     bool g_15m_0645_0800_tmp = f_det_draw_gap("15", 6, 45, 8, 0, col_15m_up, col_15m_dn, ext_15m)
+//     bool g_15m_0545_0700_tmp = f_det_draw_gap("15", 5, 45, 7, 0, col_15m_up, col_15m_dn, ext_15m) 
+//     bool g_15m_0545_0800_tmp = f_det_draw_gap("15", 5, 45, 8, 0, col_15m_up, col_15m_dn, ext_15m) 
+//     bool g_15m_0645_0700_tmp = f_det_draw_gap("15", 6, 45, 7, 0, col_15m_up, col_15m_dn, ext_15m)
+//     gap_15m_det_any := g_15m_0545_0700_tmp or g_15m_0545_0800_tmp or g_15m_0645_0700_tmp or g_15m_0645_0800_tmp
+
+if show_30m_gaps and timeframe.period == "30" 
+//     bool g_630_800_tmp = f_det_draw_gap("30", 6, 30, 8, 0, col_30m_up, col_30m_dn, ext_30m)
+//     bool g_530_700_tmp = f_det_draw_gap("30", 5, 30, 7, 0, col_30m_up, col_30m_dn, ext_30m) 
+//     bool g_530_800_tmp = f_det_draw_gap("30", 5, 30, 8, 0, col_30m_up, col_30m_dn, ext_30m) 
+//     bool g_630_700_tmp = f_det_draw_gap("30", 6, 30, 7, 0, col_30m_up, col_30m_dn, ext_30m) 
+//     gap_30m_det_any := g_530_700_tmp or g_530_800_tmp or g_630_800_tmp or g_630_700_tmp
+
+if show_1h_gaps and timeframe.period == "60" 
+//     bool g_1h_06_08_tmp = f_det_draw_gap("60", 6, 0, 8, 0, col_1h_up, col_1h_dn, ext_1h)
+//     bool g_1h_05_07_tmp = f_det_draw_gap("60", 5, 0, 7, 0, col_1h_up, col_1h_dn, ext_1h) 
+//     bool g_1h_05_08_tmp = f_det_draw_gap("60", 5, 0, 8, 0, col_1h_up, col_1h_dn, ext_1h) 
+//     bool g_1h_06_07_tmp = f_det_draw_gap("60", 6, 0, 7, 0, col_1h_up, col_1h_dn, ext_1h) 
+//     gap_1h_det_any := g_1h_05_07_tmp or g_1h_05_08_tmp or g_1h_06_07_tmp or g_1h_06_08_tmp
+
+if show_4h_gaps and timeframe.period == "240" 
+//     bool g_4h_3_8_det = f_det_draw_gap("240", 3, 0, 8, 0, col_4h_up, col_4h_dn, ext_4h)
+//     bool g_4h_3_7_det = f_det_draw_gap("240", 3, 0, 7, 0, col_4h_up, col_4h_dn, ext_4h) 
+//     bool g_4h_4_7_det = f_det_draw_gap("240", 4, 0, 7, 0, col_4h_up, col_4h_dn, ext_4h) 
+//     bool g_4h_4_8_det = f_det_draw_gap("240", 4, 0, 8, 0, col_4h_up, col_4h_dn, ext_4h) 
+//     gap_4h_det_any := g_4h_3_7_det or g_4h_3_8_det or g_4h_4_7_det or g_4h_4_8_det 
+
+if show_1d_gaps and timeframe.period == "D" 
+//     gap_1d_det := f_det_draw_daily_gap(col_1d_up, col_1d_dn, ext_1d)
+
+if en_alerts
+//     bool alert_cond = false
+//     string gap_dets = ""
+
+    if alert_tf == "All"
+        if gap_5m_det_any 
+//             alert_cond := true
+//             gap_dets += "5m CME ETH gap, "
+        if gap_15m_det_any
+//             alert_cond := true
+//             gap_dets += "15m CME ETH gap, "
+        if gap_30m_det_any 
+//             alert_cond := true
+//             gap_dets += "30m CME ETH gap, "
+        if gap_1h_det_any 
+//             alert_cond := true
+//             gap_dets += "1h CME ETH gap, "
+        if gap_4h_det_any
+//             alert_cond := true
+//             gap_dets += "4h CME ETH gap, "
+        if gap_1d_det
+//             alert_cond := true
+//             gap_dets += "1d CME ETH gap, " 
+//     else if alert_tf == "5min" and gap_5m_det_any 
+//         alert_cond := true
+//         gap_dets += "5m CME ETH gap"
+//     else if alert_tf == "15min" and gap_15m_det_any 
+//         alert_cond := true
+//         gap_dets += "15m CME ETH gap"
+//     else if alert_tf == "30min" and gap_30m_det_any 
+//         alert_cond := true
+//         gap_dets += "30m CME ETH gap"
+//     else if alert_tf == "1hour" and gap_1h_det_any 
+//         alert_cond := true
+//         gap_dets += "1h CME ETH gap"
+//     else if alert_tf == "4hour" and gap_4h_det_any
+//         alert_cond := true
+//         gap_dets += "4h CME ETH gap"
+//     else if alert_tf == "1day" and gap_1d_det
+//         alert_cond := true
+//         gap_dets += "1d CME ETH gap"
+
+    if alert_cond
+        if str.length(gap_dets) > 0 and str.substring(gap_dets, str.length(gap_dets) - 2, str.length(gap_dets)) == ", "
+//             gap_dets := str.substring(gap_dets, 0, str.length(gap_dets) - 2)
+//         alert("CME ETH Gap Detected: " + gap_dets, alert.freq_once_per_bar)

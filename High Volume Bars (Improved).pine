@@ -1,0 +1,68 @@
+// High Volume Bars (Improved)
+
+
+
+//@version=6
+// High Volume Bars (Improved)
+// Highlights high-volume bars using absolute, delta, or z-score modes.
+// Shows optional volume bands in a separate pane; barcolor/bgcolor still affect the main chart.
+// Inputs: lookback length, stddev multiplier, change vs z-score modes, SMA/EMA smoothing,
+// optional background highlight, and band visibility.
+
+// Set overlay=false so bands are visible; barcolor still paints main price bars.
+indicator("High Volume Bars (Improved)", overlay = true, max_bars_back = 500)
+
+// Inputs
+len              = input.int(200, "Lookback", minval = 5)
+mult             = input.float(1.0, "StdDev Multiplier", step = 0.1, minval = 0.1)
+mode_change      = input.bool(true,  "Use Volume Change vs Previous Bar?")
+mode_zscore      = input.bool(false, "Use Z-Score on Volume? (Overrides change)")
+smooth_with_ema  = input.bool(false, "Use EMA Instead of SMA?")
+show_bands       = input.bool(false, "Show Volume Bands?")
+use_bg           = input.bool(false, "Also Highlight Background?")
+upColor          = input.color(color.new(#4490f9, 50), "Up Color")
+dnColor          = input.color(color.new(#000000, 90), "Down Color")
+upHighVolColor   = input.color(#66ba6a, "Up High-Vol Color")
+dnHighVolColor   = input.color(#7f4cb6,  "Down High-Vol Color")
+bgHighVolColor   = input.color(color.new(#ffffff, 90), "High-Vol Background")
+
+// Helpers
+// vol_ma(src, l)   => smooth_with_ema ? ta.ema(src, l) : ta.sma(src, l)
+// vol_std(src, l)  => ta.stdev(src, l)
+
+// Baseline volume stats
+vol_avg = vol_ma(volume, len)
+vol_dev = vol_std(volume, len)
+upper   = vol_avg + vol_dev * mult
+lower   = math.max(vol_avg - vol_dev * mult, 0)
+
+// High-volume conditions
+vol_ref = mode_change ? (volume - volume[1]) : volume
+is_high_abs   = volume > upper
+is_high_delta = vol_ref > vol_dev * mult
+z_score       = vol_dev == 0.0 ? 0.0 : (volume - vol_avg) / vol_dev
+is_high_z     = z_score >= mult
+
+is_high =
+//      mode_zscore ? is_high_z
+//    : mode_change ? is_high_delta
+//                  : is_high_abs
+
+// Bar coloring
+is_up = close > open
+is_dn = close < open
+bar_col = is_up ? (is_high ? upHighVolColor : upColor)
+//          : is_dn ? (is_high ? dnHighVolColor : dnColor)
+//          : color.new(color.gray, 60)
+
+// Bar coloring still affects the main chart even with overlay = false
+barcolor(bar_col)
+bgcolor(use_bg and is_high ? bgHighVolColor : na)
+
+// Optional visual bands for context (now on their own scale)
+plot(show_bands ? upper   : na, "Upper Band", #ffffff, style = plot.style_line)
+plot(show_bands ? lower   : na, "Lower Band", color.new(#991010, 70), style = plot.style_line)
+plot(show_bands ? vol_avg : na, "Volume Avg", color.gray)
+
+// Alert: high-volume bar
+// alertcondition(is_high, "High Volume Bar", "High-volume bar detected")

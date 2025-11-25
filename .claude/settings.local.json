@@ -12,7 +12,10 @@
       "Bash(npm list:*)",
       "Bash(npx tsc:*)",
       "Bash(git init:*)",
-      "Bash(gh repo create:*)"
+      "Bash(gh repo create:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: TradingView Indicators MCP Server\n\n- Added MCP server for analyzing TradingView Pine Script indicators\n- Included comprehensive collection of 100+ indicators\n- Added Docker support for containerized deployment\n- Created CLAUDE.md documentation for future development\n- Configured for Claude Desktop integration\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

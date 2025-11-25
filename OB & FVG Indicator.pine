@@ -1,0 +1,108 @@
+// OB & FVG Indicator
+
+
+
+//@version=6
+indicator('OB & FVG Indicator', overlay = true, max_boxes_count = 500, max_labels_count = 500)
+
+// ==================== 設定パネル ====================
+// FVG設定
+fvg_enable = input.bool(true, 'FVG表示', group = 'FVG設定')
+fvg_bullish_color = input.color(color.new(color.green, 80), '上昇FVG色', group = 'FVG設定')
+fvg_bearish_color = input.color(color.new(color.red, 80), '下降FVG色', group = 'FVG設定')
+fvg_extend_bars = input.int(50, 'FVG延長バー数', minval = 10, maxval = 200, group = 'FVG設定')
+fvg_delete_filled = input.bool(true, '埋まったFVGを削除', group = 'FVG設定')
+
+// OB設定
+ob_enable = input.bool(true, 'OB表示', group = 'OB設定')
+ob_bullish_color = input.color(color.new(color.blue, 75), '上昇OB色', group = 'OB設定')
+ob_bearish_color = input.color(color.new(color.orange, 75), '下降OB色', group = 'OB設定')
+ob_extend_bars = input.int(50, 'OB延長バー数', minval = 10, maxval = 200, group = 'OB設定')
+ob_show_label = input.bool(true, 'OBラベル表示', group = 'OB設定')
+
+// サイズフィルター
+min_fvg_pips = input.float(5.0, '最小FVGサイズ(pips)', minval = 0, group = 'フィルター設定')
+min_ob_pips = input.float(3.0, '最小OBサイズ(pips)', minval = 0, group = 'フィルター設定')
+
+// ==================== ATR計算 ====================
+atr = ta.atr(14)
+
+// ==================== FVG検出と表示 ====================
+var array<box> fvg_boxes = array.new_box()
+
+if fvg_enable and barstate.isconfirmed
+    // 上昇FVG（Bullish FVG）
+    if low > high[2]
+        gap_size = low - high[2]
+        gap_pips = gap_size / syminfo.mintick
+
+        if gap_pips >= min_fvg_pips
+            fvg_box = box.new(bar_index[2], high[2], bar_index + fvg_extend_bars, low, border_color = fvg_bullish_color, bgcolor = fvg_bullish_color, border_width = 1)
+//             array.push(fvg_boxes, fvg_box)
+
+    // 下降FVG（Bearish FVG）
+    if high < low[2]
+        gap_size = low[2] - high
+        gap_pips = gap_size / syminfo.mintick
+
+        if gap_pips >= min_fvg_pips
+            fvg_box = box.new(bar_index[2], low[2], bar_index + fvg_extend_bars, high, border_color = fvg_bearish_color, bgcolor = fvg_bearish_color, border_width = 1)
+//             array.push(fvg_boxes, fvg_box)
+
+// FVGの削除処理（埋まったら消す）
+if fvg_delete_filled and array.size(fvg_boxes) > 0
+    for i = array.size(fvg_boxes) - 1 to 0 by 1
+        b = array.get(fvg_boxes, i)
+        top = box.get_top(b)
+        bottom = box.get_bottom(b)
+
+        // 上昇FVG（topが下、bottomが上）が埋まった
+        if top < bottom and close >= top
+//             box.delete(b)
+//             array.remove(fvg_boxes, i)
+        // 下降FVG（topが上、bottomが下）が埋まった
+//         else if top > bottom and close <= top
+//             box.delete(b)
+//             array.remove(fvg_boxes, i)
+
+// ==================== OB検出と表示 ====================
+var array<box> ob_boxes = array.new_box()
+
+if ob_enable and barstate.isconfirmed
+    // 上昇OB（Bullish OB）= 上昇前の最後の下降足
+    if close > open[1] and open[1] > close[1]
+        ob_size = open[1] - close[1]
+        ob_pips = ob_size / syminfo.mintick
+
+        if ob_pips >= min_ob_pips
+            ob_box = box.new(bar_index[1], open[1], bar_index + ob_extend_bars, close[1], border_color = ob_bullish_color, bgcolor = ob_bullish_color, border_width = 2)
+//             array.push(ob_boxes, ob_box)
+
+            if ob_show_label
+//                 label.new(bar_index[1], close[1], 'OB', style = label.style_label_up, color = ob_bullish_color, textcolor = color.white, size = size.tiny)
+
+    // 下降OB（Bearish OB）= 下降前の最後の上昇足
+    if close < open[1] and open[1] < close[1]
+        ob_size = close[1] - open[1]
+        ob_pips = ob_size / syminfo.mintick
+
+        if ob_pips >= min_ob_pips
+            ob_box = box.new(bar_index[1], close[1], bar_index + ob_extend_bars, open[1], border_color = ob_bearish_color, bgcolor = ob_bearish_color, border_width = 2)
+//             array.push(ob_boxes, ob_box)
+
+            if ob_show_label
+//                 label.new(bar_index[1], open[1], 'OB', style = label.style_label_down, color = ob_bearish_color, textcolor = color.white, size = size.tiny)
+
+// ==================== ボックス数制限（パフォーマンス対策） ====================
+// 古いボックスを削除して軽量化
+max_boxes = 100
+
+if array.size(fvg_boxes) > max_boxes
+    for i = 0 to array.size(fvg_boxes) - max_boxes - 1 by 1
+//         box.delete(array.get(fvg_boxes, i))
+//         array.remove(fvg_boxes, i)
+
+if array.size(ob_boxes) > max_boxes
+    for i = 0 to array.size(ob_boxes) - max_boxes - 1 by 1
+//         box.delete(array.get(ob_boxes, i))
+//         array.remove(ob_boxes, i)

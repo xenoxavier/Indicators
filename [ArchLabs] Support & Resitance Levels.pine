@@ -1,0 +1,513 @@
+[ArchLabs] Support & Resitance Levels
+
+[ArchLabs] Support & Resistance Levels — SR-v1.100
+// Smart, auto-managed zones for clean market structure
+
+// ⸻
+
+// 🔍 What this indicator does
+
+// This script automatically finds and maintains high-quality support & resistance zones on your chart, so you don’t have to keep redrawing levels by hand.
+
+// It:
+// • Detects major swing highs and lows (pivots)
+// • Builds support and resistance zones (not just thin lines)
+// • Filters out overlapping / redundant levels
+// • Tracks how price interacts with those zones in real time
+// • Marks and alerts:
+// • ✅ Breakouts
+// • 🚨 False breakouts
+// • 🔁 Retests
+// • Flips broken support → resistance and resistance → support automatically
+
+// You get a clean structural map of the market, continuously updated.
+
+// ⸻
+
+// 🧠 How levels are built (conceptually)
+// 1. The indicator looks back over a configurable window and finds significant highs and lows (pivots).
+// 2. From each confirmed pivot, it creates:
+// • A core level price (horizontal line)
+// • A price area around it (shaded zone), sized relative to recent price range/volatility
+// 3. It then checks for overlaps between existing levels and new candidates:
+// • If a new level is too close to an existing one (within your overlap threshold), it gets discarded.
+// • This keeps only the most meaningful, non-redundant levels on the chart.
+// 4. A cap of around 10 levels per side (support / resistance) keeps the view readable.
+
+// The result: a curated set of zones that actually matter, not a wall of lines.
+
+// ⸻
+
+// 🎨 Visuals on the chart
+
+// You’ll see:
+// • Support zones
+// • Line: bullish color (default green)
+// • Area: semi-transparent band below/around the line
+// • Resistance zones
+// • Line: bearish color (default red)
+// • Area: semi-transparent band above/around the line
+
+// Colors are customizable for:
+// • Level line
+// • Zone area
+// • Breakout highlight
+// • Retest label
+
+// This makes it easy to visually separate support vs resistance and quickly spot key reactions.
+
+// ⸻
+
+// ⚡ Dynamic behavior & level lifecycle
+
+// Each level goes through a natural “life cycle,” which the indicator tracks for you:
+// 1. Active zone
+// • The level is valid and extended to the right as long as price stays “engaged” with it (using smoothed highs/lows to avoid noise).
+// 2. Extension / pause
+// • When price pulls away from the level far enough, the extension can temporarily stop so the level doesn’t stretch indefinitely without interaction.
+// • If price comes back into the zone with meaningful action, the level can resume extension.
+// 3. Break & role reversal
+// • When price cleanly breaks the level (based on smoothed price, not just a wick), the zone is:
+// • Stopped and locked in place
+// • Marked as broken
+// • Immediately cloned and flipped:
+// • Broken support becomes a new resistance zone at the same area.
+// • Broken resistance becomes a new support zone.
+
+// This gives you automatic role-reversal levels without manually redrawing anything.
+
+// ⸻
+
+// 🧷 Event tags & alerts
+
+// The indicator tracks three key interactions with each zone:
+
+// 1. Breakouts (optional)
+// When price decisively breaks a level:
+// • A small breakout label appears on/near the level:
+// • Support broken → bearish breakout style
+// • Resistance broken → bullish breakout style
+// • An alert message is fired (if alerts are enabled on the script)
+
+// Use this to catch true structural breaks that may signal trend continuation or regime change.
+
+// ⸻
+
+// 2. False breakouts (optional)
+// False breakouts are marked when price:
+// • Wicks through a level, but
+// • Fails to close beyond it and quickly returns inside the zone
+
+// When detected:
+// • A 🚨 FB label appears at the level
+// • The label tracks with price while the false breakout is active
+// • An alert can fire each time this behavior is confirmed
+
+// This is very useful for reversal traders and anyone fading failed breakouts.
+
+// ⸻
+
+// 3. Retests (optional)
+// Retests are detected when:
+// • Price re-enters a zone after previously moving away from it
+// • The candle comes back into the area for the first time in this new approach
+
+// The script:
+// • Marks the retest with a “T” label in a distinct color for support vs resistance
+// • Brings that level to the top of the internal priority list, keeping fresh retests visually and logically “hot”
+
+// Traders often use these as high-probability reaction points (e.g., breakout → retest → continuation).
+
+// ⸻
+
+// ⚙️ Key settings
+
+// All inputs are grouped for clarity:
+
+// Support / Resistance Levels
+// • Pivots Lookback
+// Controls how far back the indicator looks for swing highs/lows.
+// • Higher value → fewer, stronger levels
+// • Lower value → more reactive, more levels
+// • Overlap Multiplier (Pips)
+// Sets how aggressively overlapping levels are merged/ignored.
+// • Higher value → fewer levels, more consolidation
+// • Lower value → more granular levels
+// • Auto Overlap
+// When enabled, the script automatically adjusts the overlap threshold based on timeframe:
+// • Intraday lower timeframes → tighter filtering
+// • Higher/intra-session → more appropriate scaling
+// This lets you drop the indicator on multiple timeframes without constantly retuning.
+
+// ⸻
+
+// Level Event Toggles
+// • Breakout Labels & Alerts (on/off)
+// • False Breakout Labels & Alerts (on/off)
+// • Retest Labels & Alerts (on/off)
+
+// Turn on only what fits your style.
+// Scalpers might want all three; swing traders may prefer only breakouts + retests.
+
+// ⸻
+
+// Support / Resistance Colors
+// Separate color groups for:
+// • Line & area of support levels
+// • Line & area of resistance levels
+// • Visual styling for breakouts
+// • Visual styling for retests
+
+// You can match your existing chart theme or build a dedicated SR layout.
+
+// ⸻
+
+// 📈 How to use it in your trading
+
+// Here are a few practical ways to integrate this indicator:
+// • Context map
+// Use it as a structural overlay on any symbol/timeframe to see where price is likely to react.
+// • Breakout + retest setups
+// • Wait for a level to break with a breakout label.
+// • Then watch for a T (retest) label into the flipped zone.
+// • Combine with your own confirmation (price action, volume, oscillators, etc.).
+// • Mean-reversion & fade trades
+// • Hunt for false breakout (FB) labels on key levels.
+// • These are often good spots to fade aggressive moves that lose momentum.
+// • Confluence builder
+// • Combine zones with trend tools, VR/DC, moving averages, or higher timeframe structure.
+// • A breakout/retest at a level that also lines up with higher TF structure can be especially meaningful.
+
+// ⸻
+
+// ✅ Summary
+
+[ArchLabs] Support & Resistance Levels (SR-v1.100) is designed to be:
+// • Clean – no cluttered spaghetti of lines
+// • Adaptive – zones evolve with the market and flip roles automatically
+// • Actionable – breakout, false breakout, and retest events are clearly marked and alert-ready
+// • Flexible – works on any market and timeframe with simple, intuitive inputs
+
+// Drop it on your chart, tune the lookback & overlap to your style, and let it handle the heavy lifting of structural mapping while you focus on decisions.
+
+
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © GeorgeMihai
+
+//@version=6
+indicator(title = '[ArchLabs] Support & Resitance Levels', shorttitle = 'SR-v1.100', overlay = true, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500)
+import TradingView/ta/5
+
+//------------------------------------------------------------------------------------//
+
+s_r_group = 'Support / Resistance Levels'
+
+piv_length = input.int(40, 'Pivots Lookback', group = s_r_group, tooltip = 'Minimum distance back to take level into consideration')
+
+overlap_muliplier = input.float(250, 'Overlap Multiplier (Pips)', minval = 0, maxval = 1000, step = 10, group = s_r_group, tooltip = 'Helps discard overlapping levels, higher values mean less leves (10 pips = 0.1% price change)', inline = 'overlap')
+
+auto_overlap = input.bool(defval = true, title = 'Auto Overlap', group = s_r_group, inline = 'overlap')
+
+//res = input.timeframe("", "Timeframe", group = s_r_group)
+
+events_group = 'Level Event Toggles'
+breakout_on = input.bool(false, 'Breakout Labels & Alerts', group = events_group)
+false_breakout_on = input.bool(true, 'False Breakout Labels & Alerts', group = events_group)
+retest_on = input.bool(true, 'Retest Labels & Alerts', group = events_group)
+
+max_levels = 10
+
+s_group = 'Suport Colors'
+r_group = 'Resistance Colors'
+
+bullish_color = input.color(#089981, 'Level', group = s_group, inline = 'll')
+bearish_color = input.color(#f23645, 'Level', group = r_group, inline = 'lr')
+
+bullish_color_2 = input.color(#0899811f, 'Area', group = s_group, inline = 'll')
+bearish_color_2 = input.color(#f2364625, 'Area', group = r_group, inline = 'lr')
+
+bullish_color_3 = input.color(#08998178, 'Breakout', group = s_group, inline = 'll')
+bearish_color_3 = input.color(#f2364680, 'Breakout', group = r_group, inline = 'lr')
+
+bullish_color_4 = input.color(#080d9978, 'Retest', group = s_group, inline = 'll')
+bearish_color_4 = input.color(#f236e980, 'Retest', group = r_group, inline = 'lr')
+
+//------------------------------------------------------------------------------------//
+
+// type Pivot
+// 	int x1
+// 	float y1
+// 	int x2
+// 	float y2
+// 	float area_size
+// 	string level_type
+// 	line pivot_line
+// 	box pivot_area
+// 	bool extend
+// 	bool broken
+// 	label broken_label
+// 	label retest_label
+// 	label false_breakout_label
+
+var array<Pivot> high_pivots = array.new<Pivot>()
+var array<Pivot> low_pivots = array.new<Pivot>()
+
+//------------------------------------------------------------------------------------//
+
+hl_length = 3 //timeframe.isintraday ? 10 : 5
+hl_tema = ta.ema(close, hl_length)
+//plot(hl_tema, color = color.white)
+high_tema = ta.tema(high, 3)
+low_tema = ta.tema(low, 3)
+cutoff_percentage = 75
+
+// getTimeframeMultiplier() =>
+    if timeframe.isintraday and timeframe.multiplier < 5
+//         50
+//     else if timeframe.isintraday and timeframe.multiplier >= 5 and timeframe.multiplier <= 240
+//         100
+//     else
+//         200
+
+dynamic_overlap = auto_overlap ? getTimeframeMultiplier() / 100 : overlap_muliplier / 100
+
+//------------------------------------------------------------------------------------//
+
+// distanceFromClose(Pivot piv) =>
+//     math.abs(close - piv.y1) / close * 100
+    //------------------------------------------------------------------------------------//
+
+// isPivotSupport(Pivot piv) =>
+//     piv.level_type == 'S'
+
+// placeOnFirstIndex(Pivot piv) =>
+    if isPivotSupport(piv)
+        piv_index = low_pivots.indexof(piv)
+
+        if piv_index != 0
+//             low_pivots.remove(piv_index)
+//             low_pivots.unshift(piv)
+//     else
+        piv_index = high_pivots.indexof(piv)
+
+        if piv_index != 0
+//             high_pivots.remove(piv_index)
+//             high_pivots.unshift(piv)
+
+// checkOverlap(float y1_p1, float y2_p1, float y1_p2, float y2_p2, float multiplier) =>
+    p2_lower = math.min(y1_p2, y2_p2) * (1 - multiplier / 100)
+    p2_upper = math.max(y1_p2, y2_p2) * (1 + multiplier / 100)
+
+    overlap = y1_p1 >= p2_lower and y1_p1 <= p2_upper or y2_p1 >= p2_lower and y2_p1 <= p2_upper
+//     overlap
+
+// checkPriceInsideLevel(float price, float y1_p2, float y2_p2) =>
+    p2_lower = math.min(y1_p2, y2_p2)
+    p2_upper = math.max(y1_p2, y2_p2)
+
+    overlap = price >= p2_lower and price <= p2_upper
+//     overlap
+
+// checkIfLevelIsAlreadyMarked(float y1, float y2, bool isSupport) =>
+    level_exists = false
+
+    if low_pivots.size() > 0
+        for i = 0 to math.min(low_pivots.size() - 1, max_levels) by 1
+            ll_piv = low_pivots.get(i)
+            //log.info(str.format("Last Low at: {0}", ll_piv.y1))
+//             level_exists := checkOverlap(y1, y2, ll_piv.y1, ll_piv.y2, dynamic_overlap) or checkOverlap(ll_piv.y1, ll_piv.y2, y1, y2, dynamic_overlap)
+            if level_exists == true
+//                 break
+
+    if level_exists == false and high_pivots.size() > 0
+        for i = 0 to math.min(high_pivots.size() - 1, max_levels) by 1
+            lh_piv = high_pivots.get(i)
+            //log.info(str.format("Last High at: {0}", lh_piv.y1))
+//             level_exists := checkOverlap(y1, y2, lh_piv.y1, lh_piv.y2, dynamic_overlap) or checkOverlap(lh_piv.y1, lh_piv.y2, y1, y2, dynamic_overlap)
+            if level_exists == true
+//                 break
+
+//     level_exists
+
+// create_new_pivot_area(int x1, float y1, int x2, float y2, float y3, string level_type, color line_color, color area_color) =>
+    new_line = line.new(x1, y1, x2, y1, extend = extend.right, color = line_color, width = 2)
+    new_area = box.new(x1, y1, x2, y2, border_color = na, bgcolor = area_color, extend = extend.right)
+    new_broken_label = label.new(na, na, color = na)
+
+    if level_type == 'S'
+//         low_pivots.unshift(Pivot.new(x1, y1, x2, y2, y3, level_type, new_line, new_area, true, false, new_broken_label, na, na))
+//     else
+//         high_pivots.unshift(Pivot.new(x1, y1, x2, y2, y3, level_type, new_line, new_area, true, false, new_broken_label, na, na))
+
+// brokenLevel(Pivot piv) =>
+//     isPivotSupport(piv) ? hl_tema[1] >= piv.y1 and hl_tema < piv.y1 : hl_tema[1] <= piv.y1 and hl_tema > piv.y1
+
+// checkBrokenLevel(Pivot piv) =>
+    if piv.broken == false
+        if brokenLevel(piv)
+//             piv.x2 := bar_index
+//             piv.pivot_line.set_x2(piv.x2)
+//             piv.pivot_line.set_extend(extend.none)
+
+//             piv.pivot_area.set_right(piv.x2)
+//             piv.pivot_area.set_extend(extend.none)
+//             piv.broken := true
+
+            new_level_type = isPivotSupport(piv) ? 'R' : 'S'
+            line_color = new_level_type == 'S' ? bullish_color : bearish_color
+            area_color = new_level_type == 'S' ? bullish_color_2 : bearish_color_2
+
+//             create_new_pivot_area(piv.x2, piv.y2, piv.x2 + 1, piv.y1, piv.area_size, new_level_type, line_color, area_color)
+
+            if not na(piv.false_breakout_label)
+//                 piv.false_breakout_label.delete()
+
+            if breakout_on
+                break_text = isPivotSupport(piv) ? ' Support Broken ' : ' Resistance Broken '
+
+//                 piv.broken_label.set_color(isPivotSupport(piv) ? bearish_color_3 : bullish_color_3)
+//                 piv.broken_label.set_xy(piv.x2, piv.y1)
+//                 piv.broken_label.set_size(size.tiny)
+//                 piv.broken_label.set_textcolor(color.white)
+//                 piv.broken_label.set_text(isPivotSupport(piv) ? '\n 🔻 \n B' : '🔺 \n B \n')
+//                 piv.broken_label.set_tooltip(break_text)
+//                 piv.broken_label.set_style(isPivotSupport(piv) ? label.style_label_upper_right : label.style_label_lower_right)
+
+//                 alert(syminfo.ticker + ' ' + timeframe.period + break_text + 'at price (' + str.tostring(piv.y1, format.mintick) + ')', freq = alert.freq_once_per_bar_close)
+
+// falseBreakout(Pivot piv) =>
+//     isPivotSupport(piv) ? hl2 >= piv.y1 and low <= piv.y1 : hl2 <= piv.y1 and high > piv.y1
+
+// checkFalseBreakout(Pivot piv) =>
+    if piv.broken == false and false_breakout_on
+        if falseBreakout(piv)
+            tooltip_text = isPivotSupport(piv) ? ' Support False Brekout ' : ' Resistance False Brekout '
+
+            if na(piv.false_breakout_label)
+                label_style = isPivotSupport(piv) ? label.style_label_upper_right : label.style_label_lower_right
+                label_color = isPivotSupport(piv) ? bullish_color_3 : bearish_color_3
+                label_text = isPivotSupport(piv) ? '\n 🚨 \n FB' : '🚨 \n FB \n'
+
+//                 piv.false_breakout_label := label.new(bar_index, piv.y1, text = label_text, color = label_color, textcolor = color.white, style = label_style, size = size.tiny, tooltip = tooltip_text)
+//                 piv.false_breakout_label
+//             else
+//                 piv.false_breakout_label.set_x(bar_index)
+
+//             alert(syminfo.ticker + ' ' + timeframe.period + tooltip_text + 'at price (' + str.tostring(piv.y1, format.mintick) + ')', freq = alert.freq_once_per_bar)
+
+// isRetestingLevelArea(Pivot piv) =>
+//     isPivotSupport(piv) ? checkPriceInsideLevel(low, piv.y1, piv.y2) and checkPriceInsideLevel(low[1], piv.y1, piv.y2) == false and low[1] > piv.y1 : checkPriceInsideLevel(high, piv.y1, piv.y2) and checkPriceInsideLevel(high[1], piv.y1, piv.y2) == false and high[1] < piv.y1
+
+// checkRetest(Pivot piv) =>
+    if piv.broken == false and retest_on
+        if isRetestingLevelArea(piv)
+            retest_text = isPivotSupport(piv) ? ' Support Retest ' : ' Resistance Retest '
+            price = isPivotSupport(piv) ? low : high
+
+//             placeOnFirstIndex(piv)
+
+            if na(piv.retest_label)
+                label_style = isPivotSupport(piv) ? label.style_label_upper_right : label.style_label_lower_right
+                label_color = isPivotSupport(piv) ? bullish_color_4 : bearish_color_4
+                label_text = 'T'
+
+//                 piv.retest_label := label.new(bar_index, price, text = label_text, color = label_color, textcolor = color.white, style = label_style, size = size.tiny, tooltip = retest_text)
+//                 piv.retest_label
+//             else
+//                 piv.retest_label.set_xy(bar_index, price)
+
+//             alert(syminfo.ticker + ' ' + timeframe.period + retest_text + 'at price (' + str.tostring(price, format.mintick) + ')', freq = alert.freq_once_per_bar)
+
+// extendLevel(Pivot piv) =>
+    if piv.broken == false and piv.extend == false
+        should_extend = isPivotSupport(piv) ? low_tema < piv.y2 + piv.area_size : high_tema > piv.y2 - piv.area_size
+
+        if should_extend == true
+//             placeOnFirstIndex(piv)
+
+//             piv.extend := true
+//             piv.pivot_line.set_extend(extend.right)
+//             piv.pivot_area.set_extend(extend.right)
+
+// stopExtendLevel(Pivot piv) =>
+    if piv.broken == false and piv.extend == true
+        should_stop_extend = isPivotSupport(piv) ? low_tema > piv.y2 + piv.area_size : high_tema < piv.y2 - piv.area_size
+        if should_stop_extend
+//             piv.x2 := piv.x1 == bar_index ? bar_index + 1 : bar_index
+//             piv.extend := false
+//             piv.pivot_line.set_x2(piv.x2 + 1)
+//             piv.pivot_line.set_extend(extend.none)
+//             piv.pivot_area.set_right(piv.x2 + 1)
+//             piv.pivot_area.set_extend(extend.none)
+
+//------------------------------------------------------------------------------------//
+
+pivot_high = ta.pivothigh(high, piv_length, piv_length)
+pivot_low = ta.pivotlow(low, piv_length, piv_length)
+
+top = ta.valuewhen(bool(pivot_high), high[piv_length], 0)
+bot = ta.valuewhen(bool(pivot_low), low[piv_length], 0)
+
+is_new_top = top != top[1]
+is_new_bot = bot != bot[1]
+
+previous_High = ta.highest(high, piv_length)
+previous_Low = ta.lowest(low, piv_length)
+
+if is_new_top
+    x1 = bar_index - piv_length
+    y1 = top
+
+    x2 = x1 + 1
+    high_low_factor = (previous_High - previous_Low) / previous_High * .2
+    y2 = y1 * (1 - high_low_factor * 2)
+    area_size = y1 - y2
+
+    if high_pivots.size() > 0
+        if checkIfLevelIsAlreadyMarked(y1, y2, false) == false
+//             create_new_pivot_area(x1, y1, x2, y2, area_size, 'R', bearish_color, bearish_color_2)
+//     else
+//         create_new_pivot_area(x1, y1, x2, y2, area_size, 'R', bearish_color, bearish_color_2)
+
+if is_new_bot
+    x1 = bar_index - piv_length
+    y1 = bot
+
+    x2 = x1 + 1
+    high_low_factor = (previous_High - previous_Low) / previous_High * .2
+    y2 = y1 * (1 + high_low_factor * 2)
+    area_size = y2 - y1
+
+    if low_pivots.size() > 0
+        if checkIfLevelIsAlreadyMarked(y1, y2, true) == false
+//             create_new_pivot_area(x1, y1, x2, y2, area_size, 'S', bullish_color, bullish_color_2)
+//     else
+//         create_new_pivot_area(x1, y1, x2, y2, area_size, 'S', bullish_color, bullish_color_2)
+
+if low_pivots.size() != 0
+    for i = 0 to low_pivots.size() - 1 by 1
+        piv = low_pivots.get(i)
+
+        //if distanceFromClose(piv) < cutoff_percentage
+//         checkBrokenLevel(piv)
+//         checkFalseBreakout(piv)
+
+//         extendLevel(piv)
+//         stopExtendLevel(piv)
+
+//         checkRetest(piv)
+
+if high_pivots.size() != 0
+    for i = 0 to high_pivots.size() - 1 by 1
+        piv = high_pivots.get(i)
+
+        //if distanceFromClose(piv) < cutoff_percentage
+//         checkBrokenLevel(piv)
+//         checkFalseBreakout(piv)
+
+//         extendLevel(piv)
+//         stopExtendLevel(piv)
+
+//         checkRetest(piv)
+
+//------------------------------------------------------------------------------------//

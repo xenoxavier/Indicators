@@ -1,0 +1,56 @@
+// FVG Detector > pips > Tangerine
+
+
+
+//@version=5
+indicator("FVG Detector > pips", overlay=true)
+
+// Réglage minimum en pips
+minPips = input.int(8, "Min FVG Size (pips)", minval=1)
+pipSize = syminfo.mintick * 10  // Pour EURUSD, pip = 0.0001 → pipSize = 0.001
+
+// Bougies pour détection FVG
+high1 = high[2]
+low1 = low[2]
+high3 = high
+low3 = low
+
+// Détection FVG
+fvgUp = low1 > high3
+fvgDown = high1 < low3
+
+// Taille du gap
+gapUpSize = low1 - high3
+gapDownSize = low3 - high1
+
+// Conditions validées si gap > X pips
+validFvgUp = fvgUp and gapUpSize >= minPips * pipSize
+validFvgDown = fvgDown and gapDownSize >= minPips * pipSize
+
+// Affichage étiquettes
+plotshape(validFvgUp, style=shape.labelup, location=location.belowbar, color=color.rgb(212, 0, 0), text="FVG DOWN", textcolor=color.white)
+plotshape(validFvgDown, style=shape.labeldown, location=location.abovebar, color=color.rgb(55, 173, 0), text="FVG UP", textcolor=color.white)
+
+
+// === Dessin de rectangles pendant 10 bougies ===
+var fvgUpRects = array.new<line>()
+var fvgDownRects = array.new<line>()
+
+if validFvgUp
+    // Crée un rectangle haussier (ligne horizontale haute + basse)
+    lineTop = line.new(bar_index, low1, bar_index + 10, low1, color=color.rgb(212, 0, 0), width=1, style=line.style_dashed)
+    lineBot = line.new(bar_index, high3, bar_index + 10, high3, color=color.rgb(212, 0, 0), width=1, style=line.style_dashed)
+//     array.push(fvgUpRects, lineTop)
+//     array.push(fvgUpRects, lineBot)
+
+if validFvgDown
+    // Crée un rectangle baissier (ligne horizontale haute + basse)
+    lineTop = line.new(bar_index, high1, bar_index + 10, high1, color=color.rgb(55, 173, 0), width=1, style=line.style_dashed)
+    lineBot = line.new(bar_index, low3, bar_index + 10, low3, color=color.rgb(55, 173, 0), width=1, style=line.style_dashed)
+//     array.push(fvgDownRects, lineTop)
+//     array.push(fvgDownRects, lineBot)
+
+// Alertes automatiques
+// alertcondition(validFvgUp, title="FVG Haussier détecté", message="FVG haussier > 8 pips détecté sur EURUSD")
+// alertcondition(validFvgDown, title="FVG Baissier détecté", message="FVG baissier > 8 pips détecté sur EURUSD")
+

@@ -1,0 +1,305 @@
+// Chart Analyser — Full dashboard + insights
+
+//@version=5
+indicator("Chart Analyser — Provisional pivots + Confirm (Full dashboard + insights)", overlay=true, max_labels_count=200, max_lines_count=200)
+
+// ===== Inputs: colours =====
+emaFastColor  = input.color(color.orange, "EMA Fast colour")
+emaMedColor   = input.color(color.yellow, "EMA Med colour")
+emaSlowColor  = input.color(color.blue, "EMA Slow colour")
+vwapColor     = input.color(color.purple, "VWAP colour")
+bbFillColor   = input.color(color.new(color.gray, 90), "BB fill (visual only)")
+bbLineColor   = input.color(color.gray, "BB line colour")
+
+pivotShapeHighColor = input.color(color.red, "Pivot High shape colour")
+pivotShapeLowColor  = input.color(color.green, "Pivot Low shape colour")
+pivotLabelHighColor = input.color(color.red, "Pivot High label base colour")
+pivotLabelLowColor  = input.color(color.green, "Pivot Low label base colour")
+
+barBullColor  = input.color(color.new(color.green, 0), "Bull bar colour")
+barBearColor  = input.color(color.new(color.red, 0), "Bear bar colour")
+dashboardBgCol = input.color(color.new(color.black, 0), "Dashboard background colour")
+dashboardTextCol = input.color(color.white, "Dashboard text colour")
+
+// ===== Inputs: analysis & visuals =====
+lenFast = input.int(21, "Fast EMA", minval=1)
+lenMed  = input.int(50, "Medium EMA", minval=1)
+lenSlow = input.int(200, "Slow EMA", minval=1)
+
+rsiLen = input.int(14, "RSI Length", minval=1)
+rsiOB  = input.int(70, "RSI Overbought", minval=1)
+rsiOS  = input.int(30, "RSI Oversold", minval=1)
+
+adxLen = input.int(14, "ADX Length", minval=1)
+adxSmooth = input.int(14, "ADX Smoothing", minval=1)
+atrLen = input.int(14, "ATR Length", minval=1)
+bbLen  = input.int(20, "BB Length", minval=1)
+bbMult = input.float(2.0, "BB Multiplier", step=0.1)
+
+macdFast = input.int(12, "MACD Fast", minval=1)
+macdSlow = input.int(26, "MACD Slow", minval=1)
+macdSig  = input.int(9,  "MACD Signal", minval=1)
+
+volMaLen = input.int(20, "Volume MA Length", minval=1)
+volMult  = input.float(2.0, "Volume spike multiplier", step=0.1)
+
+pivotLeft  = input.int(5, "Pivot Left", minval=1)
+pivotRight = input.int(5, "Pivot Right", minval=1)
+showPivotLabels = input.bool(true, "Show pivot labels")
+showPivotShapes = input.bool(true, "Show pivot shapes")
+labelGapLines = input.int(1, "Label gap lines", minval=0, maxval=3)
+labelOpacity = input.int(60, "Label opacity (0-100)", minval=0, maxval=100)
+
+showDashboard = input.bool(true, "Show dashboard (top-right)")
+dashboardCols = math.max(1, input.int(1, "Dashboard columns", minval=1, maxval=3))
+dashboardRows = math.max(1, input.int(6, "Dashboard rows", minval=1, maxval=20))
+
+// ===== Price + core indicators =====
+price = close
+emaF = ta.ema(price, lenFast)
+emaM = ta.ema(price, lenMed)
+emaS = ta.ema(price, lenSlow)
+
+trendBull = emaF > emaM and emaM > emaS
+trendBear = emaF < emaM and emaM < emaS
+trendText = trendBull ? "Bull" : trendBear ? "Bear" : "Neutral"
+
+// RSI
+rsi = ta.rsi(price, rsiLen)
+rsiState = rsi > rsiOB ? "Overbought" : rsi < rsiOS ? "Oversold" : "Neutral"
+
+// ADX via ta.dmi
+[pdi, mdi, adx] = ta.dmi(adxLen, adxSmooth)
+adxText = adx >= 25 ? "Strong" : adx >= 20 ? "Moderate" : "Weak"
+
+// MACD
+[macdLine, macdSignal, macdHist] = ta.macd(price, macdFast, macdSlow, macdSig)
+macdDir = macdHist > 0 ? "Bullish hist" : macdHist < 0 ? "Bearish hist" : "Flat hist"
+
+// ATR + BB (volatility)
+atr = ta.atr(atrLen)
+basis = ta.sma(price, bbLen)
+dev = bbMult * ta.stdev(price, bbLen)
+bbUpper = basis + dev
+bbLower = basis - dev
+bbWidth = (basis == 0) ? 0.0 : (2.0 * dev) / math.abs(basis)
+bbWidthHighest50 = ta.highest(bbWidth, 50)
+squeeze = bbWidthHighest50 > 0 and bbWidth < bbWidthHighest50 * 0.6
+
+// Volume
+volMA = ta.sma(volume, volMaLen)
+volSpike = volume > volMA * volMult
+volText = volume > volMA ? "Above avg" : "Below avg"
+
+// VWAP
+vwap = ta.vwap
+vwapPos = price > vwap ? "Above VWAP" : price < vwap ? "Below VWAP" : "At VWAP"
+
+// ===== Pivots: Provisional + Confirm =====
+ph = ta.pivothigh(high, pivotLeft, pivotRight)
+pl = ta.pivotlow(low, pivotLeft, pivotRight)
+isPH = not na(ph)
+isPL = not na(pl)
+
+// provisional candidate detection (no future bars required)
+candPH = high >= ta.highest(high, pivotLeft + 1)
+candPL = low  <= ta.lowest(low, pivotLeft + 1)
+
+candPH_bar = candPH ? bar_index : na
+candPL_bar = candPL ? bar_index : na
+candPH_val = candPH ? high : na
+candPL_val = candPL ? low  : na
+
+// store last confirmed pivot values & bars
+var float lastPivotHigh = na
+var int   lastPivotHighBar = na
+var float lastPivotLow  = na
+var int   lastPivotLowBar = na
+
+// labels: provisional and final (reuse to avoid hitting label limits)
+var label provPH = na
+var label provPL = na
+var label finalPH = na
+var label finalPL = na
+
+// label gap & colours
+gap = ""
+for i = 0 to labelGapLines - 1
+//     gap := gap + "\n"
+colHprov = color.new(pivotLabelHighColor, math.max(0, math.min(100, labelOpacity + 25)))
+colLprov = color.new(pivotLabelLowColor,  math.max(0, math.min(100, labelOpacity + 25)))
+colHfin  = color.new(pivotLabelHighColor, math.max(0, math.min(100, labelOpacity)))
+colLfin  = color.new(pivotLabelLowColor,  math.max(0, math.min(100, labelOpacity)))
+
+// create/update provisional labels immediately
+if candPH and showPivotLabels
+    if na(provPH)
+//         provPH := label.new(x = candPH_bar, y = candPH_val, xloc = xloc.bar_index, yloc = yloc.abovebar, text = "pPH" + gap + "\n" + str.tostring(candPH_val, format.mintick), style = label.style_label_down, color = colHprov, textcolor = color.white, size = size.tiny)
+//     else
+//         label.set_xy(provPH, candPH_bar, candPH_val)
+//         label.set_text(provPH, "pPH" + gap + "\n" + str.tostring(candPH_val, format.mintick))
+//         label.set_color(provPH, colHprov)
+// else
+    if not na(provPH)
+//         label.delete(provPH)
+//         provPH := na
+
+if candPL and showPivotLabels
+    if na(provPL)
+//         provPL := label.new(x = candPL_bar, y = candPL_val, xloc = xloc.bar_index, yloc = yloc.belowbar, text = "pPL" + gap + "\n" + str.tostring(candPL_val, format.mintick), style = label.style_label_up, color = colLprov, textcolor = color.white, size = size.tiny)
+//     else
+//         label.set_xy(provPL, candPL_bar, candPL_val)
+//         label.set_text(provPL, "pPL" + gap + "\n" + str.tostring(candPL_val, format.mintick))
+//         label.set_color(provPL, colLprov)
+// else
+    if not na(provPL)
+//         label.delete(provPL)
+//         provPL := na
+
+// when confirmed pivots appear (after pivotRight), convert provisional -> final and store values
+if isPH
+    pBarHigh = bar_index - pivotRight
+    pHighVal = high[pivotRight]
+//     lastPivotHigh := pHighVal
+//     lastPivotHighBar := pBarHigh
+    if na(finalPH) and showPivotLabels
+//         finalPH := label.new(x = pBarHigh, y = pHighVal, xloc = xloc.bar_index, yloc = yloc.abovebar, text = "Pivot H" + gap + "\n" + str.tostring(pHighVal, format.mintick), style = label.style_label_down, color = colHfin, textcolor = color.white, size = size.tiny)
+//     else if showPivotLabels
+//         label.set_xy(finalPH, pBarHigh, pHighVal)
+//         label.set_text(finalPH, "Pivot H" + gap + "\n" + str.tostring(pHighVal, format.mintick))
+//         label.set_color(finalPH, colHfin)
+    if not na(provPH)
+//         label.delete(provPH)
+//         provPH := na
+
+if isPL
+    pBarLow = bar_index - pivotRight
+    pLowVal = low[pivotRight]
+//     lastPivotLow := pLowVal
+//     lastPivotLowBar := pBarLow
+    if na(finalPL) and showPivotLabels
+//         finalPL := label.new(x = pBarLow, y = pLowVal, xloc = xloc.bar_index, yloc = yloc.belowbar, text = "Pivot L" + gap + "\n" + str.tostring(pLowVal, format.mintick), style = label.style_label_up, color = colLfin, textcolor = color.white, size = size.tiny)
+//     else if showPivotLabels
+//         label.set_xy(finalPL, pBarLow, pLowVal)
+//         label.set_text(finalPL, "Pivot L" + gap + "\n" + str.tostring(pLowVal, format.mintick))
+//         label.set_color(finalPL, colLfin)
+    if not na(provPL)
+//         label.delete(provPL)
+//         provPL := na
+
+// ===== Visuals: apply user colours =====
+pEMAfast = plot(emaF, color=emaFastColor, title="EMA Fast")
+pEMAmid  = plot(emaM, color=emaMedColor, title="EMA Med")
+pEMAslow = plot(emaS, color=emaSlowColor, title="EMA Slow")
+pVWAP    = plot(vwap, title="VWAP", color=vwapColor, linewidth=2)
+pBBb     = plot(basis, title="BB basis", color=bbLineColor, linewidth=1)
+pBBu     = plot(bbUpper, title="BB upper", color=bbLineColor, linewidth=1)
+pBBl     = plot(bbLower, title="BB lower", color=bbLineColor, linewidth=1)
+fill(pBBb, pBBu, color=bbFillColor)
+
+barcolor(price > emaF ? barBullColor : price < emaF ? barBearColor : na)
+
+// shapes (cheap)
+plotshape(series = (isPH and showPivotShapes) ? lastPivotHigh : na, title = "Pivot High shape", location = location.absolute, style = shape.triangledown, color = pivotShapeHighColor, size = size.tiny)
+plotshape(series = (isPL and showPivotShapes) ? lastPivotLow  : na, title = "Pivot Low shape",  location = location.absolute, style = shape.triangleup,   color = pivotShapeLowColor,  size = size.tiny)
+
+// ===== Signal scoring (provisional-aware and less brittle) =====
+score = 0.0
+// score := score + (trendBull ? 30 : trendBear ? -30 : 0)
+momNorm = macdHist / math.max(0.0001, atr)
+// score := score + math.max(-20, math.min(20, momNorm * 10))
+// score := score + (rsi < 50 and trendBull ? 10 : rsi > 50 and trendBear ? -10 : 0)
+// score := score + (volSpike ? 15 : 0)
+
+proxBonus = 0.0
+if not na(lastPivotLow) and price - lastPivotLow < atr * 1.5
+//     proxBonus := proxBonus + 10
+if not na(lastPivotHigh) and lastPivotHigh - price < atr * 1.5
+//     proxBonus := proxBonus - 10
+if na(lastPivotLow) and not na(candPL_val) and price - candPL_val < atr * 1.5
+//     proxBonus := proxBonus + 7
+if na(lastPivotHigh) and not na(candPH_val) and candPH_val - price < atr * 1.5
+//     proxBonus := proxBonus - 7
+
+// score := score + proxBonus
+
+buyThreshold = input.float(20.0, "Buy threshold", step=1.0)
+sellThreshold = input.float(-20.0, "Sell threshold", step=1.0)
+signalNow = score >= buyThreshold ? 1 : score <= sellThreshold ? -1 : 0
+
+// create a visible signal label when a signal occurs (moves with bar_index for live)
+var label sigLabel = na
+if signalNow == 1
+    if na(sigLabel)
+//         sigLabel := label.new(bar_index, high, "BUY (score " + str.tostring(score, "#.0") + ")", style=label.style_label_up, color=color.new(color.green, 0), textcolor=color.white)
+//     else
+//         label.set_xy(sigLabel, bar_index, high)
+//         label.set_text(sigLabel, "BUY (score " + str.tostring(score, "#.0") + ")")
+//         label.set_color(sigLabel, color.new(color.green, 0))
+// else if signalNow == -1
+    if na(sigLabel)
+//         sigLabel := label.new(bar_index, low, "SELL (score " + str.tostring(score, "#.0") + ")", style=label.style_label_down, color=color.new(color.red, 0), textcolor=color.white)
+//     else
+//         label.set_xy(sigLabel, bar_index, low)
+//         label.set_text(sigLabel, "SELL (score " + str.tostring(score, "#.0") + ")")
+//         label.set_color(sigLabel, color.new(color.red, 0))
+// else
+    if not na(sigLabel)
+//         label.delete(sigLabel)
+//         sigLabel := na
+
+// ===== Insights generation (short human readable lines) =====
+insights = array.new_string()
+trendInsight = trendText + " trend; ADX " + str.tostring(adx, format.mintick)
+// array.push(insights, trendInsight)
+momDir = macdHist > 0 ? "MACD hist positive" : macdHist < 0 ? "MACD hist negative" : "MACD flat"
+rsiInsight = "RSI " + str.tostring(rsi, format.mintick) + " (" + rsiState + ")"
+// array.push(insights, momDir + " · " + rsiInsight)
+volInsight = "ATR " + str.tostring(atr, format.mintick) + " · BB width " + str.tostring(bbWidth, format.mintick) + (squeeze ? " (squeeze)" : "")
+// array.push(insights, volInsight)
+// array.push(insights, "Volume: " + volText + (volSpike ? " · Spike" : ""))
+// array.push(insights, vwapPos + " · " + (signalNow == 1 ? "Buy bias" : signalNow == -1 ? "Sell bias" : "No clear bias"))
+
+srLine = ""
+if not na(lastPivotHigh)
+//     srLine := srLine + "Last R " + str.tostring(lastPivotHigh, format.mintick) + " (dist " + str.tostring(math.abs(price - lastPivotHigh), format.mintick) + ")"
+if not na(lastPivotLow)
+//     srLine := srLine + (srLine == "" ? "" : " · ") + "Last S " + str.tostring(lastPivotLow, format.mintick) + " (dist " + str.tostring(math.abs(price - lastPivotLow), format.mintick) + ")"
+if srLine == ""
+//     srLine := "No recent pivots"
+// array.push(insights, srLine)
+
+takeaway = ""
+if signalNow == 1
+//     takeaway := "Bias: BUY — score " + str.tostring(score, "#.0") + " (provisional allowed)"
+// else if signalNow == -1
+//     takeaway := "Bias: SELL — score " + str.tostring(score, "#.0") + " (provisional allowed)"
+// else
+//     takeaway := "No clear trade bias — wait for confirmation; watch VWAP and nearest pivot S/R"
+// array.push(insights, takeaway)
+
+// ===== Dashboard table (single cell) ======
+var table infoTable = na
+if na(infoTable)
+//     infoTable := table.new(position.top_right, 1, 1, border_width = 1)
+
+dbText = "Price: " + str.tostring(price, format.mintick) + "\n" +
+//          "Trend: " + trendText + " · ADX " + str.tostring(adx, format.mintick) + "\n" +
+//          "Signal: " + (signalNow == 1 ? "Buy (score " + str.tostring(score, "#.0") + ")" : signalNow == -1 ? "Sell (score " + str.tostring(score, "#.0") + ")" : "No clear bias") + "\n" +
+//          "RSI: " + str.tostring(rsi, format.mintick) + " (" + rsiState + ")" + "\n" +
+//          "MACD: " + macdDir + " · hist " + str.tostring(macdHist, format.mintick) + "\n" +
+//          "ATR: " + str.tostring(atr, format.mintick) + " · BBw: " + str.tostring(bbWidth, format.mintick) + (squeeze ? " · Squeeze" : "") + "\n" +
+//          "Volume: " + volText + (volSpike ? " · Spike" : "") + "\n" +
+//          "VWAP: " + vwapPos + "\n" +
+//          (not na(lastPivotHigh) ? "Last R: " + str.tostring(lastPivotHigh, format.mintick) + " Dist: " + str.tostring(math.abs(price - lastPivotHigh), format.mintick) + "\n" : "") +
+//          (not na(lastPivotLow)  ? "Last S: " + str.tostring(lastPivotLow, format.mintick)  + " Dist: " + str.tostring(math.abs(price - lastPivotLow), format.mintick) + "\n" : "") +
+//          "Takeaway: " + takeaway
+
+if showDashboard
+//     table.cell(table_id = infoTable, column = 0, row = 0, text = dbText, text_color = dashboardTextCol, bgcolor = dashboardBgCol, text_size = size.small)
+// else
+//     table.cell(table_id = infoTable, column = 0, row = 0, text = "", text_color = dashboardTextCol, bgcolor = color.new(dashboardBgCol, 100), text_size = size.small)
+
+// ===== Alerts (constant messages required by Pine) =====
+// alertcondition(signalNow == 1, title="ANALYSER Buy Score", message="Analyser: BUY score triggered")
+// alertcondition(signalNow == -1, title="ANALYSER Sell Score", message="Analyser: SELL score triggered")

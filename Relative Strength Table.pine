@@ -1,0 +1,527 @@
+// Relative Strength Table
+
+// Relative Strength Table
+
+// 1. Overview and Key Features
+
+// The Relative Strength Table is an indicator that compares multiple tickers against a benchmark (default: SPY) and displays their relative strength.
+// It is designed to help analyze stock leadership, sector trends, and portfolio performance in one consolidated table.
+
+// You can freely input up to 20 tickers from the Inputs panel, allowing flexible comparisons.
+// (If 20 tickers feel too limited, let me know in the comments — I’ll expand it.)
+
+// 2. How the RS Percentile Is Calculated and What It Means
+
+// The RS Percentile shows how strong the current price ratio is compared to past data, expressed as a percentile rank.
+
+// First, the indicator calculates the price ratio by dividing the ticker’s close by the benchmark’s close.
+// Then, it compares the latest ratio with historical ratio data and determines its percentile value.
+
+// Examples:
+// ・80% or higher → relatively strong
+// ・Around 50% → neutral
+// ・40% or below → relatively weak
+
+// 3. Indicator Features and Customization
+
+// 3-1. RS Lookback Settings
+// You can set up to four lookback periods for RS calculation and customize the bar count for each.
+// Default values are 5, 21, 63, and 126 bars.
+
+// You can choose which column to sort by, and the selected column is marked with an asterisk.
+// Each RS column can be shown or hidden individually via checkboxes.
+
+// 3-2. Visual Highlight Settings
+// Relative strength can be color-coded for clarity.
+// You can freely customize:
+// ・Highlight colors
+// ・Threshold values
+// ・On/off toggles for each highlight layer
+
+// 3-3. Default Tickers and Reset Function
+// These 16 sector ETFs are included as the default ticker set:
+// QQQ, QQQE, RSP, DIA, IWM, XLV, XLE, XLF, XLRE, XLB, XLP, XLU, XLY, XLK, XLC, XLI
+
+// You can return to the default list anytime by pressing the refresh button next to the ticker fields.
+
+// 4. Use Cases and Analysis Examples
+
+// 4-1. Sector Rotation Analysis
+// By comparing RS across multiple periods, you can easily identify:
+// ・Sectors gaining short-term strength
+// ・Sectors with steady long-term inflows
+
+// A sharp rise in short-term RS may signal the early stages of a rotation.
+
+// 4-2. Identifying Leaders Within a Sector
+// You can compare up to 20 tickers at once, making it easy to spot true sector leaders.
+
+// 4-3. Objective Evaluation of Portfolio Holdings
+// By entering your portfolio tickers, you can instantly see:
+// ・Whether each name is outperforming or underperforming
+// ・Which timeframes show strength
+// ・How each ticker compares to the benchmark
+// yesterday
+// Release Notes
+// Updated to Pine Script version 6.
+
+
+// CODE
+
+//@version=6
+indicator(title = 'Relative Strength Table', shorttitle = 'RS Table', overlay = true)
+
+// ====================== 1. Inputs ======================
+
+// --- Relative Strength Benchmark ---
+rs_benchmark = input.symbol('SPY', title = 'RS Benchmark')
+
+// --- RS Lookback Periods & Show Toggles ---
+group_rs_periods = 'RS Periods'
+rs_length_w1 = input.int(5, 'Period 1 (Short)', minval = 5, group = group_rs_periods, inline = 'RS1')
+show_rs_w1 = input.bool(true, '', group = group_rs_periods, inline = 'RS1', tooltip = 'Show RS Column for Period 1')
+
+rs_length_m1 = input.int(21, 'Period 2 (Medium)', minval = 5, group = group_rs_periods, inline = 'RS2')
+show_rs_m1 = input.bool(true, '', group = group_rs_periods, inline = 'RS2', tooltip = 'Show RS Column for Period 2')
+
+rs_length_m3 = input.int(63, 'Period 3 (Longer)', minval = 5, group = group_rs_periods, inline = 'RS3')
+show_rs_m3 = input.bool(true, '', group = group_rs_periods, inline = 'RS3', tooltip = 'Show RS Column for Period 3')
+
+rs_length_m6 = input.int(126, 'Period 4 (Long)', minval = 5, group = group_rs_periods, inline = 'RS4')
+show_rs_m6 = input.bool(true, '', group = group_rs_periods, inline = 'RS4', tooltip = 'Show RS Column for Period 4')
+
+// --- Average RS Column Toggle ---
+show_rs_avg = input.bool(true, title = 'Show Average RS Column', group = group_rs_periods)
+
+
+// --- Ticker List (Max 20) ---
+group_name = 'Tickers (Max 20)'
+ticker_1 = input.symbol('QQQ', 'Ticker 1', group = group_name, inline = 'T1')
+is_set_1 = input.bool(true, '', group = group_name, inline = 'T1')
+ticker_2 = input.symbol('QQQE', 'Ticker 2', group = group_name, inline = 'T2')
+is_set_2 = input.bool(true, '', group = group_name, inline = 'T2')
+ticker_3 = input.symbol('RSP', 'Ticker 3', group = group_name, inline = 'T3')
+is_set_3 = input.bool(true, '', group = group_name, inline = 'T3')
+ticker_4 = input.symbol('DIA', 'Ticker 4', group = group_name, inline = 'T4')
+is_set_4 = input.bool(true, '', group = group_name, inline = 'T4')
+ticker_5 = input.symbol('IWM', 'Ticker 5', group = group_name, inline = 'T5')
+is_set_5 = input.bool(true, '', group = group_name, inline = 'T5')
+ticker_6 = input.symbol('XLV', 'Ticker 6', group = group_name, inline = 'T6')
+is_set_6 = input.bool(true, '', group = group_name, inline = 'T6')
+ticker_7 = input.symbol('XLE', 'Ticker 7', group = group_name, inline = 'T7')
+is_set_7 = input.bool(true, '', group = group_name, inline = 'T7')
+ticker_8 = input.symbol('XLF', 'Ticker 8', group = group_name, inline = 'T8')
+is_set_8 = input.bool(true, '', group = group_name, inline = 'T8')
+ticker_9 = input.symbol('XLRE', 'Ticker 9', group = group_name, inline = 'T9')
+is_set_9 = input.bool(true, '', group = group_name, inline = 'T9')
+ticker_10 = input.symbol('XLB', 'Ticker 10', group = group_name, inline = 'T10')
+is_set_10 = input.bool(true, '', group = group_name, inline = 'T10')
+ticker_11 = input.symbol('XLP', 'Ticker 11', group = group_name, inline = 'T11')
+is_set_11 = input.bool(true, '', group = group_name, inline = 'T11')
+ticker_12 = input.symbol('XLU', 'Ticker 12', group = group_name, inline = 'T12')
+is_set_12 = input.bool(true, '', group = group_name, inline = 'T12')
+ticker_13 = input.symbol('XLY', 'Ticker 13', group = group_name, inline = 'T13')
+is_set_13 = input.bool(true, '', group = group_name, inline = 'T13')
+ticker_14 = input.symbol('XLK', 'Ticker 14', group = group_name, inline = 'T14')
+is_set_14 = input.bool(true, '', group = group_name, inline = 'T14')
+ticker_15 = input.symbol('XLC', 'Ticker 15', group = group_name, inline = 'T15')
+is_set_15 = input.bool(true, '', group = group_name, inline = 'T15')
+ticker_16 = input.symbol('XLI', 'Ticker 16', group = group_name, inline = 'T16')
+is_set_16 = input.bool(true, '', group = group_name, inline = 'T16')
+ticker_17 = input.symbol('', 'Ticker 17', group = group_name, inline = 'T17')
+is_set_17 = input.bool(false, '', group = group_name, inline = 'T17')
+ticker_18 = input.symbol('', 'Ticker 18', group = group_name, inline = 'T18')
+is_set_18 = input.bool(false, '', group = group_name, inline = 'T18')
+ticker_19 = input.symbol('', 'Ticker 19', group = group_name, inline = 'T19')
+is_set_19 = input.bool(false, '', group = group_name, inline = 'T19')
+ticker_20 = input.symbol('', 'Ticker 20', group = group_name, inline = 'T20')
+is_set_20 = input.bool(false, '', group = group_name, inline = 'T20')
+
+// --- Sorting Input ---
+sort_key_options = input.string('P2', title = 'Sort By RS Period', options = ['P1', 'P2', 'P3', 'P4', 'P Avg'], group = 'Table Settings', tooltip = 'P1=Period 1 (Short), P2=Period 2 (Medium), P3=Period 3 (Longer), P4=Period 4 (Long), P Avg=Average of visible periods')
+
+// --- Conditional Formatting Settings ---
+group_highlight = 'RS Highlight Settings'
+highlight_strong_color = input.color(color.new(color.green, 70), 'Strong RS Color', group = group_highlight, inline = 'H1')
+highlight_strong_pct = input.float(80.0, 'Strong Threshold (%)', minval = 50, maxval = 99, group = group_highlight, inline = 'H1')
+enable_strong_highlight = input.bool(true, 'Strong Highlight', group = group_highlight, inline = 'H1')
+
+highlight_neutral_color = input.color(color.new(color.yellow, 70), 'Neutral RS Color', group = group_highlight, inline = 'H2')
+highlight_weak_pct = input.float(40.0, 'Weak Threshold (%)', minval = 1, maxval = 50, group = group_highlight, inline = 'H3')
+enable_neutral_highlight = input.bool(true, 'Neutral Highlight', group = group_highlight, inline = 'H2')
+
+highlight_weak_color = input.color(color.new(color.red, 70), 'Weak RS Color', group = group_highlight, inline = 'H3')
+enable_weak_highlight = input.bool(true, 'Weak Highlight', group = group_highlight, inline = 'H3')
+
+
+// --- Table Settings (Other) ---
+table_position = input.string('Right Top', title = 'Table Position', options = ['Left Top', 'Left Center', 'Left Bottom', 'Right Top', 'Right Center', 'Right Bottom'], group = 'Table Settings')
+text_color = input.color(color.orange, title = 'Text Color', group = 'Table Appearance')
+// 修正: 背景色を黒 (#000000) で透明度 100% に戻す
+bg_color = input.color(color.new(#000000, 100), title = 'Background Color', group = 'Table Appearance')
+size_tbl = input.string('Normal', title = 'Table Size', options = ['Tiny', 'Small', 'Normal', 'Large'], group = 'Table Appearance')
+show_empty_row = input.bool(true, title = 'Add Empty Row Above Values', group = 'Table Appearance')
+
+// ====================== 2. Static Data Acquisition and Functions ======================
+
+// Get benchmark daily close price
+bench_close = request.security(rs_benchmark, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+
+// Calculate Relative Strength Percentile
+// f_rs_pct_value(ticker_close, bench_close, _len) =>
+    price_ratio = ticker_close / bench_close
+//     ta.percentrank(price_ratio, _len)
+
+// Determine background color based on RS value and user inputs
+// f_get_rs_bgcolor(rs_value, default_bg_color) =>
+    color_to_use = default_bg_color
+    if not na(rs_value)
+        if rs_value >= highlight_strong_pct and enable_strong_highlight
+//             color_to_use := highlight_strong_color
+//             color_to_use
+//         else if rs_value < highlight_weak_pct and enable_weak_highlight
+//             color_to_use := highlight_weak_color
+//             color_to_use
+//         else if rs_value >= highlight_weak_pct and rs_value < highlight_strong_pct and enable_neutral_highlight
+//             color_to_use := highlight_neutral_color
+//             color_to_use
+//     color_to_use
+
+
+// Get daily close prices for all 20 tickers
+close_1 = request.security(ticker_1, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_2 = request.security(ticker_2, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_3 = request.security(ticker_3, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_4 = request.security(ticker_4, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_5 = request.security(ticker_5, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_6 = request.security(ticker_6, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_7 = request.security(ticker_7, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_8 = request.security(ticker_8, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_9 = request.security(ticker_9, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_10 = request.security(ticker_10, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_11 = request.security(ticker_11, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_12 = request.security(ticker_12, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_13 = request.security(ticker_13, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_14 = request.security(ticker_14, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_15 = request.security(ticker_15, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_16 = request.security(ticker_16, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_17 = request.security(ticker_17, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_18 = request.security(ticker_18, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_19 = request.security(ticker_19, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+close_20 = request.security(ticker_20, 'D', close, barmerge.gaps_off, barmerge.lookahead_off)
+
+// Calculate 4 RS periods for all 20 tickers
+// Period 1 RS
+rs_w1_1 = f_rs_pct_value(close_1, bench_close, rs_length_w1)
+rs_w1_2 = f_rs_pct_value(close_2, bench_close, rs_length_w1)
+rs_w1_3 = f_rs_pct_value(close_3, bench_close, rs_length_w1)
+rs_w1_4 = f_rs_pct_value(close_4, bench_close, rs_length_w1)
+rs_w1_5 = f_rs_pct_value(close_5, bench_close, rs_length_w1)
+rs_w1_6 = f_rs_pct_value(close_6, bench_close, rs_length_w1)
+rs_w1_7 = f_rs_pct_value(close_7, bench_close, rs_length_w1)
+rs_w1_8 = f_rs_pct_value(close_8, bench_close, rs_length_w1)
+rs_w1_9 = f_rs_pct_value(close_9, bench_close, rs_length_w1)
+rs_w1_10 = f_rs_pct_value(close_10, bench_close, rs_length_w1)
+rs_w1_11 = f_rs_pct_value(close_11, bench_close, rs_length_w1)
+rs_w1_12 = f_rs_pct_value(close_12, bench_close, rs_length_w1)
+rs_w1_13 = f_rs_pct_value(close_13, bench_close, rs_length_w1)
+rs_w1_14 = f_rs_pct_value(close_14, bench_close, rs_length_w1)
+rs_w1_15 = f_rs_pct_value(close_15, bench_close, rs_length_w1)
+rs_w1_16 = f_rs_pct_value(close_16, bench_close, rs_length_w1)
+rs_w1_17 = f_rs_pct_value(close_17, bench_close, rs_length_w1)
+rs_w1_18 = f_rs_pct_value(close_18, bench_close, rs_length_w1)
+rs_w1_19 = f_rs_pct_value(close_19, bench_close, rs_length_w1)
+rs_w1_20 = f_rs_pct_value(close_20, bench_close, rs_length_w1)
+
+// Period 2 RS
+rs_m1_1 = f_rs_pct_value(close_1, bench_close, rs_length_m1)
+rs_m1_2 = f_rs_pct_value(close_2, bench_close, rs_length_m1)
+rs_m1_3 = f_rs_pct_value(close_3, bench_close, rs_length_m1)
+rs_m1_4 = f_rs_pct_value(close_4, bench_close, rs_length_m1)
+rs_m1_5 = f_rs_pct_value(close_5, bench_close, rs_length_m1)
+rs_m1_6 = f_rs_pct_value(close_6, bench_close, rs_length_m1)
+rs_m1_7 = f_rs_pct_value(close_7, bench_close, rs_length_m1)
+rs_m1_8 = f_rs_pct_value(close_8, bench_close, rs_length_m1)
+rs_m1_9 = f_rs_pct_value(close_9, bench_close, rs_length_m1)
+rs_m1_10 = f_rs_pct_value(close_10, bench_close, rs_length_m1)
+rs_m1_11 = f_rs_pct_value(close_11, bench_close, rs_length_m1)
+rs_m1_12 = f_rs_pct_value(close_12, bench_close, rs_length_m1)
+rs_m1_13 = f_rs_pct_value(close_13, bench_close, rs_length_m1)
+rs_m1_14 = f_rs_pct_value(close_14, bench_close, rs_length_m1)
+rs_m1_15 = f_rs_pct_value(close_15, bench_close, rs_length_m1)
+rs_m1_16 = f_rs_pct_value(close_16, bench_close, rs_length_m1)
+rs_m1_17 = f_rs_pct_value(close_17, bench_close, rs_length_m1)
+rs_m1_18 = f_rs_pct_value(close_18, bench_close, rs_length_m1)
+rs_m1_19 = f_rs_pct_value(close_19, bench_close, rs_length_m1)
+rs_m1_20 = f_rs_pct_value(close_20, bench_close, rs_length_m1)
+
+// Period 3 RS
+rs_m3_1 = f_rs_pct_value(close_1, bench_close, rs_length_m3)
+rs_m3_2 = f_rs_pct_value(close_2, bench_close, rs_length_m3)
+rs_m3_3 = f_rs_pct_value(close_3, bench_close, rs_length_m3)
+rs_m3_4 = f_rs_pct_value(close_4, bench_close, rs_length_m3)
+rs_m3_5 = f_rs_pct_value(close_5, bench_close, rs_length_m3)
+rs_m3_6 = f_rs_pct_value(close_6, bench_close, rs_length_m3)
+rs_m3_7 = f_rs_pct_value(close_7, bench_close, rs_length_m3)
+rs_m3_8 = f_rs_pct_value(close_8, bench_close, rs_length_m3)
+rs_m3_9 = f_rs_pct_value(close_9, bench_close, rs_length_m3)
+rs_m3_10 = f_rs_pct_value(close_10, bench_close, rs_length_m3)
+rs_m3_11 = f_rs_pct_value(close_11, bench_close, rs_length_m3)
+rs_m3_12 = f_rs_pct_value(close_12, bench_close, rs_length_m3)
+rs_m3_13 = f_rs_pct_value(close_13, bench_close, rs_length_m3)
+rs_m3_14 = f_rs_pct_value(close_14, bench_close, rs_length_m3)
+rs_m3_15 = f_rs_pct_value(close_15, bench_close, rs_length_m3)
+rs_m3_16 = f_rs_pct_value(close_16, bench_close, rs_length_m3)
+rs_m3_17 = f_rs_pct_value(close_17, bench_close, rs_length_m3)
+rs_m3_18 = f_rs_pct_value(close_18, bench_close, rs_length_m3)
+rs_m3_19 = f_rs_pct_value(close_19, bench_close, rs_length_m3)
+rs_m3_20 = f_rs_pct_value(close_20, bench_close, rs_length_m3)
+
+// Period 4 RS
+rs_m6_1 = f_rs_pct_value(close_1, bench_close, rs_length_m6)
+rs_m6_2 = f_rs_pct_value(close_2, bench_close, rs_length_m6)
+rs_m6_3 = f_rs_pct_value(close_3, bench_close, rs_length_m6)
+rs_m6_4 = f_rs_pct_value(close_4, bench_close, rs_length_m6)
+rs_m6_5 = f_rs_pct_value(close_5, bench_close, rs_length_m6)
+rs_m6_6 = f_rs_pct_value(close_6, bench_close, rs_length_m6)
+rs_m6_7 = f_rs_pct_value(close_7, bench_close, rs_length_m6)
+rs_m6_8 = f_rs_pct_value(close_8, bench_close, rs_length_m6)
+rs_m6_9 = f_rs_pct_value(close_9, bench_close, rs_length_m6)
+rs_m6_10 = f_rs_pct_value(close_10, bench_close, rs_length_m6)
+rs_m6_11 = f_rs_pct_value(close_11, bench_close, rs_length_m6)
+rs_m6_12 = f_rs_pct_value(close_12, bench_close, rs_length_m6)
+rs_m6_13 = f_rs_pct_value(close_13, bench_close, rs_length_m6)
+rs_m6_14 = f_rs_pct_value(close_14, bench_close, rs_length_m6)
+rs_m6_15 = f_rs_pct_value(close_15, bench_close, rs_length_m6)
+rs_m6_16 = f_rs_pct_value(close_16, bench_close, rs_length_m6)
+rs_m6_17 = f_rs_pct_value(close_17, bench_close, rs_length_m6)
+rs_m6_18 = f_rs_pct_value(close_18, bench_close, rs_length_m6)
+rs_m6_19 = f_rs_pct_value(close_19, bench_close, rs_length_m6)
+rs_m6_20 = f_rs_pct_value(close_20, bench_close, rs_length_m6)
+
+
+// ====================== 3. Data Aggregation and Sorting ======================
+
+// Data arrays
+var array<string> ticker_names_data = array.new_string()
+var array<float> rs_w1_data = array.new_float()
+var array<float> rs_m1_data = array.new_float()
+var array<float> rs_m3_data = array.new_float()
+var array<float> rs_m6_data = array.new_float()
+var array<float> rs_avg_data = array.new_float()
+
+// Table ID
+var table rs_table = na
+
+// Function to clean ticker prefix (BATS:, NYSE:)
+// f_clean_ticker_name(ticker_name) =>
+    array_split = str.split(ticker_name, ':')
+//     array.size(array_split) > 1 ? array.get(array_split, array.size(array_split) - 1) : ticker_name
+
+// Function to calculate the average of selected RS periods
+// f_calculate_avg_rs(rs_w1, rs_m1, rs_m3, rs_m6, show_w1, show_m1, show_m3, show_m6) =>
+    total_rs = 0.0
+    count = 0.0
+
+    if show_w1 and not na(rs_w1)
+//         total_rs := total_rs + rs_w1
+//         count := count + 1
+//         count
+    if show_m1 and not na(rs_m1)
+//         total_rs := total_rs + rs_m1
+//         count := count + 1
+//         count
+    if show_m3 and not na(rs_m3)
+//         total_rs := total_rs + rs_m3
+//         count := count + 1
+//         count
+    if show_m6 and not na(rs_m6)
+//         total_rs := total_rs + rs_m6
+//         count := count + 1
+//         count
+
+    avg = count > 0 ? total_rs / count : na
+//     avg
+
+if barstate.islast
+    // Select array for sorting based on the fixed key
+//     array<float> rs_to_sort = switch sort_key_options
+//         'P1' => rs_w1_data
+//         'P2' => rs_m1_data
+//         'P3' => rs_m3_data
+//         'P4' => rs_m6_data
+//         'P Avg' => rs_avg_data
+//         => rs_m1_data // Default to Period 2 (21 bars)
+
+    // Calculate dynamic column count
+    num_rs_columns = (show_rs_w1 ? 1 : 0) + (show_rs_m1 ? 1 : 0) + (show_rs_m3 ? 1 : 0) + (show_rs_m6 ? 1 : 0)
+
+    if show_rs_avg
+//         num_rs_columns := num_rs_columns + 1
+//         num_rs_columns
+
+    total_columns = 1 + num_rs_columns
+
+    if total_columns < 1
+//         total_columns := 1
+//         total_columns
+//     else if total_columns == 1 and num_rs_columns > 0
+//         total_columns := 2
+//         total_columns
+
+    // Set styling parameters
+    text_size_id = switch size_tbl
+//         'Tiny' => size.tiny
+//         'Small' => size.small
+//         'Large' => size.large
+//         => size.normal
+
+    table_pos_id = switch table_position
+//         'Left Top' => position.top_left
+//         'Left Center' => position.middle_left
+//         'Left Bottom' => position.bottom_left
+//         'Right Top' => position.top_right
+//         'Right Center' => position.middle_right
+//         'Right Bottom' => position.bottom_right
+//         => position.top_right
+
+    bg_col_final = bg_color // Use bg_color directly (user controls transparency via picker)
+
+    // Set up table structure
+//     rs_table := table.new(table_pos_id, total_columns, 21, bgcolor = bg_col_final)
+
+//     array.clear(ticker_names_data)
+//     array.clear(rs_w1_data)
+//     array.clear(rs_m1_data)
+//     array.clear(rs_m3_data)
+//     array.clear(rs_m6_data)
+//     array.clear(rs_avg_data)
+
+    // Aggregate data from inputs and calculations
+    ticker_symbols = array.from(ticker_1, ticker_2, ticker_3, ticker_4, ticker_5, ticker_6, ticker_7, ticker_8, ticker_9, ticker_10, ticker_11, ticker_12, ticker_13, ticker_14, ticker_15, ticker_16, ticker_17, ticker_18, ticker_19, ticker_20)
+    is_set_flags = array.from(is_set_1, is_set_2, is_set_3, is_set_4, is_set_5, is_set_6, is_set_7, is_set_8, is_set_9, is_set_10, is_set_11, is_set_12, is_set_13, is_set_14, is_set_15, is_set_16, is_set_17, is_set_18, is_set_19, is_set_20)
+
+    rs_w1_values = array.from(rs_w1_1, rs_w1_2, rs_w1_3, rs_w1_4, rs_w1_5, rs_w1_6, rs_w1_7, rs_w1_8, rs_w1_9, rs_w1_10, rs_w1_11, rs_w1_12, rs_w1_13, rs_w1_14, rs_w1_15, rs_w1_16, rs_w1_17, rs_w1_18, rs_w1_19, rs_w1_20)
+    rs_m1_values = array.from(rs_m1_1, rs_m1_2, rs_m1_3, rs_m1_4, rs_m1_5, rs_m1_6, rs_m1_7, rs_m1_8, rs_m1_9, rs_m1_10, rs_m1_11, rs_m1_12, rs_m1_13, rs_m1_14, rs_m1_15, rs_m1_16, rs_m1_17, rs_m1_18, rs_m1_19, rs_m1_20)
+    rs_m3_values = array.from(rs_m3_1, rs_m3_2, rs_m3_3, rs_m3_4, rs_m3_5, rs_m3_6, rs_m3_7, rs_m3_8, rs_m3_9, rs_m3_10, rs_m3_11, rs_m3_12, rs_m3_13, rs_m3_14, rs_m3_15, rs_m3_16, rs_m3_17, rs_m3_18, rs_m3_19, rs_m3_20)
+    rs_m6_values = array.from(rs_m6_1, rs_m6_2, rs_m6_3, rs_m6_4, rs_m6_5, rs_m6_6, rs_m6_7, rs_m6_8, rs_m6_9, rs_m6_10, rs_m6_11, rs_m6_12, rs_m6_13, rs_m6_14, rs_m6_15, rs_m6_16, rs_m6_17, rs_m6_18, rs_m6_19, rs_m6_20)
+
+    for i = 0 to 19 by 1
+        rs_w1_f = array.get(rs_w1_values, i)
+        rs_m1_f = array.get(rs_m1_values, i)
+        rs_m3_f = array.get(rs_m3_values, i)
+        rs_m6_f = array.get(rs_m6_values, i)
+
+        // Calculate Average RS
+        avg_rs = f_calculate_avg_rs(rs_w1_f, rs_m1_f, rs_m3_f, rs_m6_f, show_rs_w1, show_rs_m1, show_rs_m3, show_rs_m6)
+
+        if array.get(is_set_flags, i) and array.get(ticker_symbols, i) != ''
+//             array.push(ticker_names_data, f_clean_ticker_name(array.get(ticker_symbols, i)))
+//             array.push(rs_w1_data, rs_w1_f)
+//             array.push(rs_m1_data, rs_m1_f)
+//             array.push(rs_m3_data, rs_m3_f)
+//             array.push(rs_m6_data, rs_m6_f)
+//             array.push(rs_avg_data, avg_rs)
+
+    // Execute sorting
+    var array<float> rs_sort_copy = array.copy(rs_to_sort)
+    var array<int> sorted_indices = array.sort_indices(rs_sort_copy, order.descending)
+
+    // ----------------------------------------------------
+    // 4. Table Creation
+    // ----------------------------------------------------
+//     table.clear(rs_table, 0, 0, total_columns - 1, 20)
+
+    row = 0
+    col = 0
+
+    // Empty row
+    if show_empty_row
+        for i = 0 to total_columns - 1 by 1
+//             table.cell(rs_table, i, row, '', bgcolor = bg_col_final)
+//         row := row + 1
+//         row
+
+    // Draw table header
+//     table.cell(rs_table, col, row, 'Ticker', text_color = text_color, bgcolor = bg_col_final, text_halign = text.align_left, text_size = text_size_id)
+//     col := col + 1
+
+    // Draw dynamic RS headers
+    if show_rs_w1
+        is_sort_key = sort_key_options == 'P1' ? '*' : ''
+//         table.cell(rs_table, col, row, 'RS (' + str.tostring(rs_length_w1) + ')' + is_sort_key, text_color = text_color, bgcolor = bg_col_final, text_halign = text.align_right, text_size = text_size_id)
+//         col := col + 1
+//         col
+    if show_rs_m1
+        is_sort_key = sort_key_options == 'P2' ? '*' : ''
+//         table.cell(rs_table, col, row, 'RS (' + str.tostring(rs_length_m1) + ')' + is_sort_key, text_color = text_color, bgcolor = bg_col_final, text_halign = text.align_right, text_size = text_size_id)
+//         col := col + 1
+//         col
+    if show_rs_m3
+        is_sort_key = sort_key_options == 'P3' ? '*' : ''
+//         table.cell(rs_table, col, row, 'RS (' + str.tostring(rs_length_m3) + ')' + is_sort_key, text_color = text_color, bgcolor = bg_col_final, text_halign = text.align_right, text_size = text_size_id)
+//         col := col + 1
+//         col
+    if show_rs_m6
+        is_sort_key = sort_key_options == 'P4' ? '*' : ''
+//         table.cell(rs_table, col, row, 'RS (' + str.tostring(rs_length_m6) + ')' + is_sort_key, text_color = text_color, bgcolor = bg_col_final, text_halign = text.align_right, text_size = text_size_id)
+//         col := col + 1
+//         col
+    if show_rs_avg // Average RS Header
+        is_sort_key = sort_key_options == 'P Avg' ? '*' : ''
+//         table.cell(rs_table, col, row, 'RS Avg' + is_sort_key, text_color = text_color, bgcolor = bg_col_final, text_halign = text.align_right, text_size = text_size_id)
+//         col := col + 1
+//         col
+
+//     row := row + 1
+
+    // Populate table cells
+    for i = 0 to array.size(ticker_names_data) - 1 by 1
+        original_index = array.get(sorted_indices, i)
+
+        ticker_name = array.get(ticker_names_data, original_index)
+
+        // Get 4 RS values and Average RS value
+        rs_w1_f = array.get(rs_w1_data, original_index)
+        rs_m1_f = array.get(rs_m1_data, original_index)
+        rs_m3_f = array.get(rs_m3_data, original_index)
+        rs_m6_f = array.get(rs_m6_data, original_index)
+        rs_avg_f = array.get(rs_avg_data, original_index)
+
+        // Formatting
+        rs_w1_str = na(rs_w1_f) ? '-' : str.tostring(rs_w1_f, '0.00') + '%'
+        rs_m1_str = na(rs_m1_f) ? '-' : str.tostring(rs_m1_f, '0.00') + '%'
+        rs_m3_str = na(rs_m3_f) ? '-' : str.tostring(rs_m3_f, '0.00') + '%'
+        rs_m6_str = na(rs_m6_f) ? '-' : str.tostring(rs_m6_f, '0.00') + '%'
+        rs_avg_str = na(rs_avg_f) ? '-' : str.tostring(rs_avg_f, '0.00') + '%'
+
+        col = 0
+
+        // Ticker Name Cell
+//         table.cell(rs_table, col, row, ticker_name, text_color = text_color, bgcolor = bg_col_final, text_halign = text.align_left, text_valign = text.align_center, text_size = text_size_id)
+//         col := col + 1
+
+        // Draw RS Cells with conditional background color
+        if show_rs_w1
+//             table.cell(rs_table, col, row, rs_w1_str, text_color = text_color, bgcolor = f_get_rs_bgcolor(rs_w1_f, bg_col_final), text_halign = text.align_right, text_valign = text.align_center, text_size = text_size_id)
+//             col := col + 1
+//             col
+        if show_rs_m1
+//             table.cell(rs_table, col, row, rs_m1_str, text_color = text_color, bgcolor = f_get_rs_bgcolor(rs_m1_f, bg_col_final), text_halign = text.align_right, text_valign = text.align_center, text_size = text_size_id)
+//             col := col + 1
+//             col
+        if show_rs_m3
+//             table.cell(rs_table, col, row, rs_m3_str, text_color = text_color, bgcolor = f_get_rs_bgcolor(rs_m3_f, bg_col_final), text_halign = text.align_right, text_valign = text.align_center, text_size = text_size_id)
+//             col := col + 1
+//             col
+        if show_rs_m6
+//             table.cell(rs_table, col, row, rs_m6_str, text_color = text_color, bgcolor = f_get_rs_bgcolor(rs_m6_f, bg_col_final), text_halign = text.align_right, text_valign = text.align_center, text_size = text_size_id)
+//             col := col + 1
+//             col
+        if show_rs_avg // Average RS Column
+//             table.cell(rs_table, col, row, rs_avg_str, text_color = text_color, bgcolor = f_get_rs_bgcolor(rs_avg_f, bg_col_final), text_halign = text.align_right, text_valign = text.align_center, text_size = text_size_id)
+//             col := col + 1
+//             col
+
+//         row := row + 1
+//         row

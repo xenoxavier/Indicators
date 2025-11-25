@@ -1,0 +1,403 @@
+// 🔰BGL Algo Trendline filter
+
+
+
+//@version=6
+indicator(
+ title="🔰BGL Algo Trendline filter", 
+ timeframe_gaps=true, 
+ timeframe="",
+ overlay=true
+//  )
+
+// const string groupCalc   = "Calculation"
+// const string groupUI     = "UI Settings"
+
+// Inputs
+// float   src          = hl2
+// string  mode         = input.string("EMA-Length", "Alpha Mode", group=groupCalc, tooltip="Choose how alpha is parameterized")
+// int     L            = 20
+// int     HL           = 20
+// int     Pc           = input.int(60, "Cutoff Period (bars)", minval=2, group=groupCalc, tooltip="Used when Alpha Mode = Cutoff-Period; lower = faster")
+// float   alphaScale   = input.float(1.0, "Alpha Scale", minval=0.01, step=0.01, group=groupCalc, tooltip="Multiply final alpha for fine control")
+
+// bool    showLine     = input.bool(true, "Show Filter on chart?", group=groupUI)
+// bool    paintCandles = input.bool(true, "Paint candles according to Trend?", group=groupUI)
+// color   longColor    = input.color(#33ff00, "Long Color", group = groupUI, inline = "col")
+// color   shortColor   = input.color(#ff0000, "Short Color", group = groupUI, inline = "col")
+// int     lineW        = input.int(4, "Line Wdith", group = groupUI)
+// int     transp       = input.int(40, "Line Transparency", group = groupUI)
+
+// Alpha from chosen mode
+alpha_ema   = 2.0/(L + 1.0)                         // classic EMA mapping
+alpha_hl    = 1.0 - math.exp(-math.log(2.0)/HL)     // alpha from half-life
+alpha_cut   = 1.0 - math.exp(-(2.0*math.pi)/Pc)     // alpha from cutoff period (bilinear-inspired)
+
+alpha_raw = mode == "EMA-Length" ? alpha_ema : mode == "Half-Life" ? alpha_hl : alpha_cut
+
+alpha = math.min(0.9999, math.max(0.0001, alpha_raw * alphaScale))
+
+var float y = na
+prev = nz(y[1], src)
+// y := prev + alpha * (src - prev)
+
+// Coloring
+up = y > nz(y[1], y)
+barCol = up ? longColor : shortColor
+// Plotting
+barcolor(paintCandles ? barCol : na)
+plot(showLine ? y : na, "One-Pole", color=color.new(barCol, transp), linewidth=lineW)
+
+// Alerts
+longFlip = ta.crossover(y,y[1])
+shortFlip = ta.crossunder(y,y[1])
+
+// alertcondition(longFlip, "Long", "IIR One-Pole Long {{exchange}}:{{ticker}}")
+// alertcondition(shortFlip, "Short", "IIR One-Pole Short {{exchange}}:{{ticker}}")
+ 
+//CONSTANTS & STRINGS & INPUTS
+//---------------------------------------------------------------------------------------------------------------------{
+GREEN                   = #089981
+RED                     = #F23645
+SILVER_50               = color.new(color.silver,50)
+
+DOTTED                  = 'Dotted'
+DASHED                  = 'Dashed'
+SOLID                   = 'Solid'
+
+FORECAST1               = 'IB Against Previous Open'
+FORECAST2               = 'Filter By Current Day Of Week'
+
+EM_SPACE                = ' '
+EN_SPACE                = ' '
+FOUR_PER_EM_SPACE       = ' '
+SIX_PER_EM_SPACE        = ' '
+
+initialBalanceSpacing   = SIX_PER_EM_SPACE+SIX_PER_EM_SPACE
+extensionSpacing        = EM_SPACE+EN_SPACE+SIX_PER_EM_SPACE
+forecastSpacing         = EM_SPACE+FOUR_PER_EM_SPACE+FOUR_PER_EM_SPACE
+
+EXTENSION_GROUP         = 'EXTENSIONS'
+FIBONACCI_GROUP         = 'FIBONACCI LEVELS'
+FORECAST_GROUP          = 'FORECAST'
+STYLE_GROUP             = 'STYLE'
+
+forecastMethodTooltip   = 'Select the forecast method.\nIB Against Previous Open calculates the average difference between the IB high and low and the previous day\'s IB open price.\nFilter by Current Day of Week option calculates the average difference between the IB high and low and the IB open price for the same day of the week.'
+forecastLengthTooltip   = 'The number of data points used to calculate the average.'
+forecastMultTooltip     = 'This multiplier will be applied to the average. Bigger numbers will result in wider predicted ranges.'
+
+initialBalanceSizeInput = input.int(    10,         'Display sessions',                       inline = 'ibAll',   minval = 1)
+displayAllInput         = input.bool(   true,       'Display All',                              inline = 'ibAll')
+initialBalanceInput     = input.session('0830-10:00','Initial Balance'+initialBalanceSpacing,    inline = 'ib0')
+initialBalanceAutoInput = input.bool(   true,       'Auto',                                     inline = 'ib0')
+breakoutsInput          = input.bool(   true,       'Breakouts',                                inline = 'break0')
+breakoutsSessionInput   = input.session('0915-1030','',                                         inline = 'break0')
+breakoutsAutoInput      = input.bool(   true,       'Auto',                                     inline = 'break0')
+
+topExtensionInput       = input.bool(   true,       'Top Extension %'+extensionSpacing, group = EXTENSION_GROUP,    inline = 'top')
+topMultiplierInput      = input.int(    50,         '',                                 group = EXTENSION_GROUP,    inline = 'top',     minval = 1, step = 5) / 100
+bottomExtensionInput    = input.bool(   true,       'Bottom Extension %',               group = EXTENSION_GROUP,    inline = 'bottom')
+bottomMultiplierInput   = input.int(    50,         '',                                 group = EXTENSION_GROUP,    inline = 'bottom',  minval = 1, step = 5) / 100
+
+fibonacciInput          = input.bool(   true,       'Display Fibonnaci',                group = FIBONACCI_GROUP)
+fiboReverseInput        = input.bool(   false,      'Reverse',                          group = FIBONACCI_GROUP)
+
+fiboLevel5DisplayInput  = input.bool(   true,       '',     group = FIBONACCI_GROUP,    inline = 'fibo5')
+fiboLevel5Input         = input.float(  0.786,      '',     group = FIBONACCI_GROUP,    inline = 'fibo5')
+fiboLevel5ColorInput    = input.color(  SILVER_50,  '',     group = FIBONACCI_GROUP,    inline = 'fibo5')
+fiboLevel5StyleInput    = input.string( DASHED,     '',     group = FIBONACCI_GROUP,    inline = 'fibo5',   options = [DOTTED,DASHED,SOLID])
+
+fiboLevel4DisplayInput  = input.bool(   true,       '',     group = FIBONACCI_GROUP,    inline = 'fibo4')
+fiboLevel4Input         = input.float(  0.618,      '',     group = FIBONACCI_GROUP,    inline = 'fibo4')
+fiboLevel4ColorInput    = input.color(  SILVER_50,  '',     group = FIBONACCI_GROUP,    inline = 'fibo4')
+fiboLevel4StyleInput    = input.string( DASHED,     '',     group = FIBONACCI_GROUP,    inline = 'fibo4',   options = [DOTTED,DASHED,SOLID])
+
+fiboLevel3DisplayInput  = input.bool(   true,       '',     group = FIBONACCI_GROUP,    inline = 'fibo3')
+fiboLevel3Input         = input.float(  0.500,      '',     group = FIBONACCI_GROUP,    inline = 'fibo3')
+fiboLevel3ColorInput    = input.color(  SILVER_50,  '',     group = FIBONACCI_GROUP,    inline = 'fibo3')
+fiboLevel3StyleInput    = input.string( DASHED,     '',     group = FIBONACCI_GROUP,    inline = 'fibo3',   options = [DOTTED,DASHED,SOLID])
+
+fiboLevel2DisplayInput  = input.bool(   true,       '',     group = FIBONACCI_GROUP,    inline = 'fibo2')
+fiboLevel2Input         = input.float(  0.382,      '',     group = FIBONACCI_GROUP,    inline = 'fibo2')
+fiboLevel2ColorInput    = input.color(  SILVER_50,  '',     group = FIBONACCI_GROUP,    inline = 'fibo2')
+fiboLevel2StyleInput    = input.string( DASHED,     '',     group = FIBONACCI_GROUP,    inline = 'fibo2',   options = [DOTTED,DASHED,SOLID])
+
+fiboLevel1DisplayInput  = input.bool(   true,       '',     group = FIBONACCI_GROUP,    inline = 'fibo1')
+fiboLevel1Input         = input.float(  0.236,      '',     group = FIBONACCI_GROUP,    inline = 'fibo1')
+fiboLevel1ColorInput    = input.color(  SILVER_50,  '',     group = FIBONACCI_GROUP,    inline = 'fibo1')
+fiboLevel1StyleInput    = input.string( DASHED,     '',     group = FIBONACCI_GROUP,    inline = 'fibo1',   options = [DOTTED,DASHED,SOLID])
+
+fibosLabelsInput        = input.bool(   false,      'Display Labels'+FOUR_PER_EM_SPACE,                    group = FIBONACCI_GROUP,    inline = 'fiboLabels')
+fibosLabelSizeInput     = input.int(    10,         '|'+FOUR_PER_EM_SPACE+' Text Size'+FOUR_PER_EM_SPACE,   group = FIBONACCI_GROUP,    inline = 'fiboLabels')
+
+forecastInput           = input.bool(   true,       'Display Forecast'+forecastSpacing, group = FORECAST_GROUP,     inline = 'forecast')
+forecastModeInput       = input.string( FORECAST1,  '',                                 group = FORECAST_GROUP,     tooltip = forecastMethodTooltip,    options = [FORECAST1,FORECAST2], inline = 'forecast')
+forecastLengthInput     = input.int(    10,         'Forecast Memory',                  group = FORECAST_GROUP,     tooltip = forecastLengthTooltip,    minval = 2)
+forecastMultiplierInput = input.float(  1.0,        'Forecast Multiplier',              group = FORECAST_GROUP,     tooltip = forecastMultTooltip,      minval = 0.1,   step = 0.25)
+
+forecastTopColorInput   = input.color(  GREEN,      'Forecast Top Color',               group = FORECAST_GROUP)
+forecastBottomColorInput= input.color(  RED,        'Forecast Bottom Color',            group = FORECAST_GROUP)
+forecastStyleInput      = input.string( DOTTED,     'Forecast Style',                   group = FORECAST_GROUP,     options = [DOTTED,DASHED,SOLID])
+
+ibTopColorInput         = input.color(  GREEN,      'IB Top Color',                     group = STYLE_GROUP)
+ibBottomColorInput      = input.color(  RED,        'IB Bottom Color',                  group = STYLE_GROUP)
+transparencyInput       = input.int(    80,         'Extension Transparency',           group = STYLE_GROUP,        minval = 0, maxval = 100)
+
+//---------------------------------------------------------------------------------------------------------------------}
+//DATA STRUCTURES & VARIABLES
+//---------------------------------------------------------------------------------------------------------------------{
+// type initialBalance
+//     int startTime
+//     int endTime    
+//     int dayOfWeek
+//     float openPrice
+//     float top
+//     float bottom
+//     int endOfSession
+//     array<line> lines
+//     box background
+//     array<line> fibos
+//     array<label> labels
+//     array<line> forecast
+//     float forecastTop
+//     float forecastBottom
+
+// type forecastData
+//     float top
+//     float bottom
+
+// type forecastArray
+//     array<float> tops
+//     array<float> bottoms
+
+var array<initialBalance> initialBalances       = array.new<initialBalance>()
+var forecastData currentForecast                = forecastData.new(na,na)
+var forecastArray simpleForecastArray           = forecastArray.new(array.new<float>(),array.new<float>())
+var array<forecastArray> dayOfWeekForecastArray = array.from(forecastArray.new(array.new<float>(),array.new<float>()),forecastArray.new(array.new<float>(),array.new<float>()),forecastArray.new(array.new<float>(),array.new<float>()),
+//      forecastArray.new(array.new<float>(),array.new<float>()),forecastArray.new(array.new<float>(),array.new<float>()),forecastArray.new(array.new<float>(),array.new<float>()),forecastArray.new(array.new<float>(),array.new<float>()),
+//      forecastArray.new(array.new<float>(),array.new<float>()))
+
+// bool forecastFilter         = forecastModeInput == FORECAST2
+var int autoIBStartTime     = time
+// autoIBStartTime             := session.isfirstbar_regular ? time : autoIBStartTime
+// int autoIBEndTime           = autoIBStartTime + 3600000
+insideAutoInitialBalance    = time >= autoIBStartTime and time < autoIBEndTime
+insideAutoBreakoutsSession  = time >= autoIBEndTime
+insideInitialBalance        = initialBalanceAutoInput ? insideAutoInitialBalance : not na(time(timeframe.period, initialBalanceInput))
+initialBalanceStart         = insideInitialBalance and not insideInitialBalance[1]
+insideBreakoutsSession      = breakoutsAutoInput ? insideAutoBreakoutsSession : not na(time(timeframe.period, breakoutsSessionInput))
+
+//---------------------------------------------------------------------------------------------------------------------}
+//USER-DEFINED FUNCTIONS
+//---------------------------------------------------------------------------------------------------------------------{
+// updateCurrentForecast() =>
+    if initialBalances.size() > 0
+//         forecastArray f_orecastArray    = forecastFilter ? dayOfWeekForecastArray.get(dayofweek) : simpleForecastArray
+//         float openPrice                 = forecastFilter ? open : initialBalances.get(-1).openPrice
+//         currentForecast.top             := openPrice + forecastMultiplierInput * f_orecastArray.tops.avg()
+//         currentForecast.bottom          := openPrice + forecastMultiplierInput * f_orecastArray.bottoms.avg()    
+
+// addForecastData(float top, float bottom, float openPrice, int dayOfWeek) =>    
+//     forecastArray f_orecastArray = not na(dayOfWeek) ? dayOfWeekForecastArray.get(dayOfWeek) : simpleForecastArray    
+//     f_orecastArray.tops.push(top - openPrice)
+//     f_orecastArray.bottoms.push(bottom - openPrice)
+
+    if f_orecastArray.tops.size() > forecastLengthInput
+//         f_orecastArray.tops.shift()
+//         f_orecastArray.bottoms.shift()
+
+// gatherForecastData() =>
+//     float top       = 0
+//     float bottom    = 0
+    if initialBalances.size() >= 2
+//         initialBalance currentInitialBalance = initialBalances.get(-1)        
+        if forecastFilter
+//             addForecastData(currentInitialBalance.top, currentInitialBalance.bottom, currentInitialBalance.openPrice, currentInitialBalance.dayOfWeek)            
+//         else
+//             initialBalance lastInitialBalance = initialBalances.get(-2)
+//             addForecastData(currentInitialBalance.top, currentInitialBalance.bottom, lastInitialBalance.openPrice, na)            
+
+// gatherData() =>
+    if initialBalanceStart
+        if forecastInput                    
+//             gatherForecastData()
+//             updateCurrentForecast()
+//         initialBalances.push(initialBalance.new(time,time,dayofweek,open,high,low,time,array.new<line>(),na,array.new<line>(),array.new<label>(),array.new<line>(),currentForecast.top,currentForecast.bottom))
+
+    if initialBalances.size() > 0
+//         initialBalance currentInitialBalance= initialBalances.last()
+//         currentInitialBalance.endOfSession  := time
+        
+        if insideInitialBalance            
+//             currentInitialBalance.endTime   := time
+//             currentInitialBalance.top       := math.max(currentInitialBalance.top,high)
+//             currentInitialBalance.bottom    := math.min(currentInitialBalance.bottom,low)                    
+
+// breakouts() =>    
+//     bool bullishBreakout = false
+//     bool bearishBreakout = false
+    
+    if breakoutsInput and initialBalances.size() > 0 and insideBreakoutsSession
+//         initialBalance currentInitialBalance = initialBalances.last()
+//         bullishBreakout := close[1] < currentInitialBalance.top and close > currentInitialBalance.top
+//         bearishBreakout := close[1] > currentInitialBalance.bottom and close < currentInitialBalance.bottom
+
+    [bullishBreakout,bearishBreakout]
+
+// style(string style) =>
+//     switch style
+        DOTTED  => line.style_dotted
+        DASHED  => line.style_dashed
+        SOLID   => line.style_solid
+
+
+
+
+// === Inputs ===
+st_len  = 2   // 10 is safer for testing
+st_mult = 1 // 2–3 recommended
+atr_len = 14
+qty     = 1
+use_atr_filter = true
+
+// === Supertrend Calculation ===
+[st_line, st_dir] = ta.supertrend(st_mult, st_len)
+plot(st_line, color=st_dir > 0 ? color.green : color.red, title="Trend Change")
+
+bg_bullish = st_line >close
+bg_bearish = st_line < close
+
+bgcolor( bg_bullish ? color.new(color.red, 80) : bg_bearish ? color.new(color.green, 80) :na)
+
+//@version=5
+//(title="Blue Dot Red Dot", shorttitle="Blue DOT Red DOT", overlay=true)
+
+// === Stochastic Oscillator Inputs ===
+periodK = input.int(10, title="%K Length", minval=1)
+smoothK = input.int(4, title="%K Smoothing", minval=1)
+periodD = input.int(4, title="%D Smoothing", minval=1)
+oversold = input.int(50, title="OS Threshold", minval=20, maxval=80)
+overbought = input.int(80, title="OB Threshold", minval=20, maxval=80)
+
+// === Bollinger Bands Inputs ===
+length = input.int(15, minval=1, title="BB Length")
+mult = input.float(2.0, minval=0.001, maxval=50, title="StdDev")
+
+// === Calculations ===
+
+// Stochastic
+stochK = ta.stoch(close, high, low, periodK)
+k = ta.sma(stochK, smoothK)
+d = ta.sma(k, periodD)
+
+// Bollinger Bands
+basis = ta.sma(src, length)
+dev = mult * ta.stdev(src, length)
+upper = basis + dev
+lower = basis - dev
+
+// Plot Bollinger Bands
+//plot(upper, "Upper BB", color=color.new(color.gray, 70))
+//plot(lower, "Lower BB", color=color.new(color.gray, 70))
+
+// === "Dr Wish" Signal Logic ===
+
+// --- Blue Dot (Buy Signal) ---
+// Condition 1: Stochastic bullish crossover
+// bool stoch_buy_cross = ta.crossover(k, d)
+// Condition 2: Crossover happened from the oversold area
+// bool was_oversold = k[1] < oversold
+// Condition 3: Price touched or went below the lower BB recently (within 3 bars)
+// bool bb_touch_lower = low <= lower or low[1] <= lower[1] or low[2] <= lower[2]
+
+// Final Blue Dot Signal: All 3 conditions must be true
+// bool blueDotSignal = stoch_buy_cross and was_oversold and bb_touch_lower
+
+// Plot the Blue Dot
+plotshape(blueDotSignal, style=shape.circle, location=location.belowbar, color=color.blue, size=size.small, title="Blue Dot (Buy Signal)")
+
+// --- Red Dot (Sell Signal) ---
+// Condition 1: Stochastic bearish crossover
+// bool stoch_sell_cross = ta.crossunder(k, d)
+// Condition 2: Crossover happened from the overbought area
+// bool was_overbought = k[1] > overbought
+// Condition 3: Price touched or went above the upper BB recently (within 3 bars)
+// bool bb_touch_upper = high >= upper or high[1] >= upper[1] or high[2] >= upper[2]
+
+// Final Red Dot Signal: All 3 conditions must be true
+// bool redDotSignal = stoch_sell_cross and was_overbought and bb_touch_upper
+
+// Plot the Red Dot
+plotshape(redDotSignal, style=shape.circle, location=location.abovebar, color=color.red, size=size.small, title="Red Dot (Sell Signal)")
+
+// User Inputs
+floor_pivot_timeframe = input.timeframe("D", options=["1H", "2H", "4H", "D", "W", "M", "12M"], title="Floor Pivot Timeframe")
+show_floor_pivots = input(true, title="Show Floor Pivots")
+show_cpr = input(true, title="Show CPR")
+show_labels = input(true, title="Show Pivot Labels")
+
+// Calculations
+pivot = (high + low + close) / 3.0
+
+// Resistance Levels
+r1 = (2 * pivot) - low
+r2 = pivot + (high - low)
+r3 = r1 + (high - low)
+r4 = r3 + (r2 - r1)
+
+// Support Levels
+s1 = (2 * pivot) - high
+s2 = pivot - (high - low)
+s3 = s1 - (high - low)
+s4 = s3 - (s1 - s2)
+
+// Central Pivot Range
+bc = (high + low) / 2
+tc = pivot + (pivot - bc)
+
+// Timeframe
+floor_pivot_resolution = switch floor_pivot_timeframe
+//     "1H" => '60'
+//     "2H" => '120'
+//     "4H" => '240'
+//     => floor_pivot_timeframe
+
+// Tomorrow's Floor Pivots
+tomorrow_pivot = request.security(syminfo.tickerid, floor_pivot_resolution, pivot, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_r1 = request.security(syminfo.tickerid, floor_pivot_resolution, r1, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_r2 = request.security(syminfo.tickerid, floor_pivot_resolution, r2, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_r3 = request.security(syminfo.tickerid, floor_pivot_resolution, r3, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_r4 = request.security(syminfo.tickerid, floor_pivot_resolution, r4, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_s1 = request.security(syminfo.tickerid, floor_pivot_resolution, s1, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_s2 = request.security(syminfo.tickerid, floor_pivot_resolution, s2, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_s3 = request.security(syminfo.tickerid, floor_pivot_resolution, s3, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_s4 = request.security(syminfo.tickerid, floor_pivot_resolution, s4, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_bc = request.security(syminfo.tickerid, floor_pivot_resolution, bc, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+tomorrow_tc = request.security(syminfo.tickerid, floor_pivot_resolution, tc, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+// Plots
+plot(show_floor_pivots ? tomorrow_pivot : na, title="Pivot", color=color.yellow, linewidth=1, style=plot.style_cross)
+plot(show_floor_pivots ? tomorrow_r1 : na, title="R1", color=color.rgb(255, 204, 204), linewidth=1, style=plot.style_cross) // Light Red
+plot(show_floor_pivots ? tomorrow_r2 : na, title="R2", color=color.rgb(255, 102, 102), linewidth=1, style=plot.style_cross) // Medium Red
+plot(show_floor_pivots ? tomorrow_r3 : na, title="R3", color=color.rgb(255, 51, 51), linewidth=1, style=plot.style_cross)  // Dark Red
+plot(show_floor_pivots ? tomorrow_r4 : na, title="R4", color=color.rgb(204, 0, 0), linewidth=1, style=plot.style_cross)  // Very Dark Red
+plot(show_floor_pivots ? tomorrow_s1 : na, title="S1", color=color.rgb(204, 255, 204), linewidth=1, style=plot.style_cross) // Light Green
+plot(show_floor_pivots ? tomorrow_s2 : na, title="S2", color=color.rgb(102, 255, 102), linewidth=1, style=plot.style_cross) // Medium Green
+plot(show_floor_pivots ? tomorrow_s3 : na, title="S3", color=color.rgb(51, 255, 51), linewidth=1, style=plot.style_cross)  // Dark Green
+plot(show_floor_pivots ? tomorrow_s4 : na, title="S4", color=color.rgb(0, 204, 0), linewidth=1, style=plot.style_cross)  // Very Dark Green
+plot(show_cpr ? tomorrow_bc : na, title="BC", color=color.rgb(102, 153, 255), linewidth=1, style=plot.style_cross)  // Light Blue
+plot(show_cpr ? tomorrow_tc : na, title="TC", color=color.rgb(153, 102, 255), linewidth=1, style=plot.style_cross)  // Light Purple
+
+// Fill CPR Band
+fill(plot(show_cpr ? tomorrow_bc : na, title="BC", color=color.rgb(102, 153, 255), linewidth=1), plot(show_cpr ? tomorrow_tc : na, title="TC", color=color.rgb(153, 102, 255), linewidth=1), color=color.blue)
+
+// Pivot Labels
+if show_labels
+    var int lookahead_bars = 500
+    var label plabel = na 
+    var label s1label = na, var label s2label = na, var label s3label = na, var label s4label = na
+    var label r1label = na, var label r2label = na, var label r3label = na, var label r4label = na
+    
+    
+    
+for all with trendline filter identifies the trend

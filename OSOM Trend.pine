@@ -1,0 +1,825 @@
+// OSOM Trend
+
+
+
+//@version=6
+indicator("OSOM Trend", overlay = true, max_labels_count = 500, max_lines_count = 500, max_bars_back = 2000, max_boxes_count = 500, calc_bars_count = 5000)
+import TradersReality/Traders_Reality_Lib/2 as trLib
+
+// ───────────────────────────────
+// OSOM WV Inputs
+// ───────────────────────────────
+len         = input.int(14, "Trend Length", minval = 1, group = "OSOM WV Settings")  // Reduced default for less lag
+smoothLen   = input.int(7, "Extra Smoothing", minval = 1, group = "OSOM WV Settings")  // Reduced default
+bandMult    = input.float(0.8, "Band Width (ATR Multiplier)", step = 0.1, group = "OSOM WV Settings")  // Slightly tightened default
+atrLen      = input.int(10, "ATR Length", minval = 1, group = "OSOM WV Settings")  // Reduced default
+showSignals = input.bool(true, "Show Buy/Sell Signals", group = "OSOM WV Settings")
+visualMode  = input.string("Cloud", "Visual Mode", options = ["Cloud", "Single Band", "Line Only"], group = "OSOM WV Settings")
+fastMode    = input.bool(true, "Fast Mode (Disable Extra Smoothing)", group = "OSOM WV Settings")  // New: Toggle for minimal lag
+labelSize   = input.string("Small", "Label Size", options = ["Tiny", "Small", "Normal"], group = "OSOM WV Settings")  // New: For clutter reduction
+bullColor   = input.color(color.rgb(36, 114, 38), "Bull Color", group = "OSOM WV Settings")
+bearColor   = input.color(color.rgb(93, 12, 192, 45), "Bear Color", group = "OSOM WV Settings")
+neutralColor= input.color(color.gray, "Neutral Color", group = "OSOM WV Settings")
+showForecast = input.bool(true, "Show Trend Forecast", group = "OSOM WV Settings")
+samples      = input.int(10, "Trend Sample Size", minval = 2, group = "OSOM WV Settings")
+smoothAlpha  = input.int(5, "Forecast Smoothing Length", minval = 1, group = "OSOM WV Settings")  // For exponential smoothing
+enableTP       = input.bool(false, "Take Profit Signals", group = "OSOM WV Settings")
+tpThreshold    = input.float(2.0, "TP Z-Score Threshold", step = 0.1, group = "OSOM WV Settings")
+enableBuyBack  = input.bool(false, "Re-Entries", group = "OSOM WV Settings")
+buyBackCooldown = input.int(5, "Re-Entry Cooldown (bars)", minval = 1, group = "OSOM WV Settings")
+
+// ───────────────────────────────
+// Breakout Boxes Inputs
+// ───────────────────────────────
+pivotLen = input.int(5, "Pivot Detection Length", minval = 1, group = "Breakout Boxes Settings")
+boxWidth1 = input.int(5, "Upper Box Width", minval = 1, inline = "up", group = "Breakout Boxes Settings") / 10
+boxUpCol = input.color(#ce1c7b, "", inline = "up", group = "Breakout Boxes Settings")
+boxWidth2 = input.int(5, "Lower Box Width", minval = 1, inline = "lw", group = "Breakout Boxes Settings") / 10
+boxDnCol = input.color(#1ed87e, "", inline = "lw", group = "Breakout Boxes Settings")
+
+// ───────────────────────────────
+// MMB Inputs
+// ───────────────────────────────
+i_len = input.int(200, "Volume Lookback Period", minval = 10, group = "MMB")
+i_smooth = input.int(10, "EMA Smoothing", minval = 1, group = "MMB")
+
+// INPUT - PVSRA
+i_pvlen = input.int(10, "PVSRA Length (MT4 default = 10)", minval = 1, group = "PVSRA")
+i_climax_mult = input.float(2.0, "PVSRA Factor for Climax Volume", minval = 1.0, step = 0.1, group = "PVSRA")
+i_rising_mult = input.float(1.5, "PVSRA Factor for Rising Volume", minval = 1.0, step = 0.1, group = "PVSRA")
+
+i_use_override = input.bool(false, "Use Price & Volume from Override?", group = "PVSRA")
+i_override = input.string("INDEX:BTCUSD", "Override Symbol", tooltip = "You can use one symbol or combine, e.g. BINANCE:BTCUSDT+BYBIT:BTCUSD", group = "PVSRA")
+
+// color redVectorColor = input.color(title='Vector: Red', group='PVSRA Colors', defval=color.red, inline='vectors')
+// color greenVectorColor = input.color(title='Green', group='PVSRA Colors', defval=color.lime, inline='vectors')
+// color violetVectorColor = input.color(title='Violet', group='PVSRA Colors', defval=color.fuchsia, inline='vectors')
+// color blueVectorColor = input.color(title='Blue', group='PVSRA Colors', defval=color.blue, inline='vectors', tooltip='Bull bars are green and bear bars are red when the bar is with volume >= 200% of the average volume of the 10 previous bars, or bars where the product of candle spread x candle volume is >= the highest for the 10 previous bars.\n Bull bars are blue and bear are violet when the bar is with with volume >= 150% of the average volume of the 10 previous bars.')
+// color regularCandleUpColor = input.color(title='Regular: Up Candle', group='PVSRA Colors', defval=#999999, inline='nonVectors')
+// color regularCandleDownColor = input.color(title='Down Candle', group='PVSRA Colors', defval=#4d4d4d, inline='nonVectors', tooltip='Bull bars are light gray and bear are dark gray when none of the red/green/blue/violet vector conditions are met.')
+
+// ───────────────────────────────
+// Vector Candle Zones Inputs
+// ───────────────────────────────
+// bool showVCZ = input.bool(true, 'Show VCZ?' , group='Vector Candle Zones', inline="vczOn")
+// int zonesMax = input.int(500, 'Maximum zones to draw', group='Vector Candle Zones', inline="vczOn")
+// string zoneType = input.string(group='Vector Candle Zones', defval='Body only', title='Zone top/bottom is defined with: ', options=['Body only', 'Body with wicks'])
+// string zoneUpdateType = input.string(group='Vector Candle Zones', defval='Body with wicks', title='Zones are cleared using candle: ', options=['Body only', 'Body with wicks'])
+// int borderWidth = input.int(0, 'Zone border width', group='Vector Candle Zones')
+// bool colorOverride = input.bool(true, 'Override color?' , group='Vector Candle Zones', inline="vcz1")
+// color zoneColor = input.color(title='Color', group='Vector Candle Zones', defval=color.rgb(255, 230, 75, 90), inline="vcz1", tooltip='the vector candle zones color to use if you dont not want to use the PVSRA Candle Colors.')
+// int transperancy = input.int(90, 'Zone Transperancy', minval = 0, maxval = 100, group='Vector Candle Zones', tooltip='If the vector candle zones color is not overriden, then we want to set the transparancy of the vector candle colors as defined by the PBSRA candle colors. This setting only affects the candle zone colors not the candle colors themselves.')
+
+// ───────────────────────────────
+// CVD Inputs (Clutter-Free Mode)
+// ───────────────────────────────
+use_long = input.bool(true, "Use Long Settings", group="CVD Settings")
+use_short = input.bool(true, "Use Short Settings", group="CVD Settings")
+
+length_long = input.int(55, "Long MA Length", minval=1, group="CVD Settings")
+ma_type_long = input.string(title="Long MA Type", defval="EMA", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group="CVD Settings")
+length_short = input.int(34, "Short MA Length", minval=1, group="CVD Settings")
+ma_type_short = input.string(title="Short MA Type", defval="EMA", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group="CVD Settings")
+
+mult_long = input.float(1.5, "Long Multiplier", step=0.1, group="CVD Settings")
+len_long = input.int(40, "Long Length", minval=1, group="CVD Settings")
+
+mult_short = input.float(1.5, "Short Multiplier", step=0.1, group="CVD Settings")
+len_short = input.int(40, "Short Length", minval=1, group="CVD Settings")
+
+use_higher_timeframe = input.bool(false, "Use Higher Timeframe Data", group="CVD Settings")
+higher_tf = input.string("W", "Higher Timeframe", options=["D", "W", "M"], group="CVD Settings")
+
+use_volume_integration = input.bool(false, "Use Volume Integration in CVD", group="CVD Settings")
+
+base_cloud_distance = input.float(0.01, "Base Cloud Distance", minval=0.01, maxval=150, step=0.01, group="CVD Settings")
+use_dynamic_cloud = input.bool(true, "Use Dynamic Cloud Distance", group="CVD Settings")
+volatility_period = input.int(14, "Volatility Period", minval=1, group="CVD Settings")
+volatility_lookback = input.int(100, "Volatility Lookback", minval=1, group="CVD Settings")
+
+base_parallel_distance = input.float(8.0, "Base Parallel Distance (for Sideways)", minval=0.1, maxval=150, step=0.1, group="CVD Settings")
+
+src = input.source(close, "Source", group="CVD Settings")
+colorbars = input.bool(true, "Color Bars with CVD Trend", group="CVD Settings")
+use_dynamic_mult = input.bool(true, "Use Dynamic Multiplier", group="CVD Settings")
+
+font_size_table_option = input.string(title="Table Font Size", defval="normal", options=["tiny", "small", "normal", "large"], group="CVD Settings")
+show_cvd_table = input.bool(true, "Show CVD Status Table", group="CVD Settings")
+
+// ───────────────────────────────
+// OSOM WV Core Calculation
+// ───────────────────────────────
+vwma = ta.vwma(close, len)
+ema = ta.ema(close, len)
+rawLine = (vwma + ema) / 2
+trendLine = fastMode ? rawLine : ta.wma(rawLine, smoothLen)
+
+// ───────────────────────────────
+// OSOM WV Band Calculation
+// ───────────────────────────────
+atr = ta.atr(atrLen)
+upperBand = trendLine + atr * bandMult
+lowerBand = trendLine - atr * bandMult
+
+// ───────────────────────────────
+// OSOM WV Trend Detection
+// ───────────────────────────────
+trendUp = close > upperBand
+trendDn = close < lowerBand
+
+var float trendState = na
+// trendState := trendUp ? 1 : trendDn ? -1 : nz(trendState[1])
+
+// ───────────────────────────────
+// OSOM WV Signal Positions Declarations
+// ───────────────────────────────
+var label lastBuy = na
+var label lastSell = na
+
+// ───────────────────────────────
+// CVD Calculations (Moved up for integration)
+// ───────────────────────────────
+if use_higher_timeframe
+    var table warning_table = table.new(position.bottom_left, 1, 1, bgcolor=color.new(color.yellow, 90))
+//     table.cell(warning_table, 0, 0, "Warning: Higher TF data may delay updates.", text_color=color.black, text_size=size.small)
+
+// f_get_higher_tf_data(src) =>
+//     request.security(syminfo.tickerid, higher_tf, src)
+
+var float cvd_with_volume = na
+if use_higher_timeframe
+    higher_tf_close = f_get_higher_tf_data(close)
+    higher_tf_open = f_get_higher_tf_data(open)
+    higher_tf_high = f_get_higher_tf_data(high)
+    higher_tf_low = f_get_higher_tf_data(low)
+    higher_tf_volume = f_get_higher_tf_data(volume)
+//     float higher_tf_volume_delta = use_volume_integration ? higher_tf_volume * (higher_tf_close - higher_tf_open) : higher_tf_volume * (higher_tf_close - higher_tf_open) / (higher_tf_high - higher_tf_low)
+//     cvd_with_volume := na(cvd_with_volume[1]) ? higher_tf_volume_delta : cvd_with_volume[1] + higher_tf_volume_delta
+// else
+//     float volume_weighted_delta = use_volume_integration ? volume * (close - open) : volume * (close - open) / (high - low)
+//     cvd_with_volume := na(cvd_with_volume[1]) ? volume_weighted_delta : cvd_with_volume[1] + volume_weighted_delta
+
+// ma(source, length, ma_type) =>
+//     switch ma_type
+//         "SMA" => ta.sma(source, length)
+//         "EMA" => ta.ema(source, length)
+//         "WMA" => ta.wma(source, length)
+//         "RMA" => ta.rma(source, length)
+//         "HMA" => ta.hma(source, length)
+
+cvd_ma_long = ma(cvd_with_volume, length_long, ma_type_long)
+cvd_ma_short = ma(cvd_with_volume, length_short, ma_type_short)
+
+current_volatility = ta.atr(volatility_period)
+avg_volatility = ta.sma(current_volatility, volatility_lookback)
+volatility_multiplier = math.max(current_volatility / avg_volatility, 1)
+dynamic_cloud_distance = use_dynamic_cloud ? base_cloud_distance * volatility_multiplier : base_cloud_distance
+
+higher_tf_atr = use_higher_timeframe ? f_get_higher_tf_data(ta.atr(len_long)) : ta.atr(len_long)
+upper_cloud_long = cvd_ma_long + dynamic_cloud_distance * higher_tf_atr
+lower_cloud_long = cvd_ma_long - dynamic_cloud_distance * higher_tf_atr
+upper_cloud_short = cvd_ma_short + dynamic_cloud_distance * higher_tf_atr
+lower_cloud_short = cvd_ma_short - dynamic_cloud_distance * higher_tf_atr
+
+lower_parallel_long1 = cvd_ma_long - base_parallel_distance * higher_tf_atr
+upper_parallel_long1 = cvd_ma_long + base_parallel_distance * higher_tf_atr
+lower_parallel_short1 = cvd_ma_short - base_parallel_distance * higher_tf_atr
+upper_parallel_short1 = cvd_ma_short + base_parallel_distance * higher_tf_atr
+
+// f_dynamic_mult(base_mult, atr_length, use_dynamic) =>
+    if use_dynamic
+        volatility_factor = ta.atr(atr_length) / ta.atr(atr_length)[20]
+        adjusted_mult = base_mult * math.sqrt(volatility_factor)
+//         math.min(math.max(adjusted_mult, base_mult * 0.5), base_mult * 2)
+//     else
+//         base_mult
+
+dynamic_mult_long = f_dynamic_mult(mult_long, len_long, use_dynamic_mult)
+dynamic_mult_short = f_dynamic_mult(mult_short, len_short, use_dynamic_mult)
+deltaAtr_long = dynamic_mult_long * ta.atr(len_long)
+deltaAtr_short = dynamic_mult_short * ta.atr(len_short)
+midb_long = ta.sma(src, len_long)
+midb_short = ta.sma(src, len_short)
+upperb_long = midb_long + deltaAtr_long
+lowerb_long = midb_long - deltaAtr_long
+upperb_short = midb_short + deltaAtr_short
+lowerb_short = midb_short - deltaAtr_short
+
+trendUp_long = close > upperb_long
+trendDown_long = close < lowerb_long
+trendUp_short = close > upperb_short
+trendDown_short = close < lowerb_short
+
+var color colorTrend = na
+// colorTrend := use_long and trendDown_long ? color.red : use_long and trendUp_long ? color.blue : use_short and trendDown_short ? color.red : use_short and trendUp_short ? color.blue : nz(colorTrend[1])
+
+// Market States
+is_long = cvd_with_volume > cvd_ma_long and cvd_with_volume > cvd_ma_short
+is_short = cvd_with_volume < cvd_ma_long and cvd_with_volume < cvd_ma_short
+is_test = (cvd_with_volume > cvd_ma_long and cvd_with_volume < upper_cloud_long) or (cvd_with_volume < cvd_ma_long and cvd_with_volume > lower_cloud_long) or (cvd_with_volume > cvd_ma_short and cvd_with_volume < upper_cloud_short) or (cvd_with_volume < cvd_ma_short and cvd_with_volume > lower_cloud_short)
+is_sideways = cvd_with_volume > lower_parallel_long1 and cvd_with_volume < upper_parallel_long1 or cvd_with_volume > lower_parallel_short1 and cvd_with_volume < upper_parallel_short1
+
+long_state = is_long
+short_state = is_short
+test_state = is_test
+sideways_state = is_sideways
+
+// ───────────────────────────────
+// OSOM WV Trend Duration Forecast with Exponential Smoothing
+// ───────────────────────────────
+var float trend = na
+// trend := trendState == 1 ? 1.0 : trendState == -1 ? 0.0 : nz(trend[1])
+var int Trendcount = 0
+var float bullSmoothAvg = na
+var float bearSmoothAvg = na
+var float prevForecast = na
+var array<int> bullishCount = array.new_int()
+var array<int> bearishCount = array.new_int()
+
+// float cvd_factor = (is_long and cvd_with_volume > upper_cloud_long) ? 1.2 : (is_test) ? 0.8 : 1.0  // Boost for strong CVD, reduce for testing
+// float cvd_factor_bear = (is_short and cvd_with_volume < lower_cloud_long) ? 1.2 : (is_test) ? 0.8 : 1.0  // Similar for bearish
+
+if barstate.isconfirmed
+    if showForecast and not na(trend) and trend != trend[1]
+//         int actualLen = Trendcount
+//         float prevTrend = trend[1]
+//         label prevLabel = prevTrend == 1.0 ? lastBuy : lastSell
+        if not na(prevLabel)
+//             string arrow = prevTrend == 1.0 ? "↑" : "↓"
+//             string txt = arrow + " " + str.tostring(actualLen)
+//             label.set_text(prevLabel, txt)
+        
+//         int realLen = Trendcount
+        if trend == 1.0
+//             array.push(bearishCount, realLen)
+//             float adjustedLen = realLen * cvd_factor_bear
+//             bearSmoothAvg := na(bearSmoothAvg) ? adjustedLen : (adjustedLen * (2 / (smoothAlpha + 1))) + bearSmoothAvg * (1 - (2 / (smoothAlpha + 1)))
+//         else
+//             array.push(bullishCount, realLen)
+//             float adjustedLen = realLen * cvd_factor
+//             bullSmoothAvg := na(bullSmoothAvg) ? adjustedLen : (adjustedLen * (2 / (smoothAlpha + 1))) + bullSmoothAvg * (1 - (2 / (smoothAlpha + 1)))
+        
+//         float newForecast = trend == 1.0 ? bullSmoothAvg : bearSmoothAvg
+//         prevForecast := newForecast
+//         Trendcount := 0
+
+//     Trendcount += 1
+
+if array.size(bullishCount) > samples
+//     array.shift(bullishCount)
+if array.size(bearishCount) > samples
+//     array.shift(bearishCount)
+
+// ───────────────────────────────
+// OSOM WV Colors
+// ───────────────────────────────
+trendCol = trendState == 1 ? bullColor : trendState == -1 ? bearColor : neutralColor
+
+// ───────────────────────────────
+// OSOM WV Visualization Controls
+// ───────────────────────────────
+showCloud  = visualMode == "Cloud"
+showSingle = visualMode == "Single Band"
+showLine   = visualMode == "Line Only"
+
+singleBand = trendState == 1 ? lowerBand : trendState == -1 ? upperBand : na
+
+// ───────────────────────────────
+// Breakout Boxes Types and Variables
+// ───────────────────────────────
+// type bb_pivot
+//     float val
+//     int index
+// type Box
+//     box body
+//     box sell
+//     box buy
+var bb_pivot Highs = bb_pivot.new()
+var bb_pivot Lows = bb_pivot.new()
+var Box upperBox = Box.new()
+var Box lowerBox = Box.new()
+
+// ───────────────────────────────
+// Breakout Boxes Calculations
+// ───────────────────────────────
+bb_ph = ta.pivothigh(pivotLen, pivotLen)
+bb_pl = ta.pivotlow(pivotLen, pivotLen)
+aTr = ta.atr(200)
+atr0 = aTr * 0.2
+atr1 = aTr * boxWidth1
+atr2 = aTr * boxWidth2
+
+if not na(bb_ph)
+    if math.abs(Highs.val - bb_ph) < atr0
+        if upperBox.body.get_right() > bar_index - pivotLen
+//             upperBox.buy.set_right(upperBox.body.get_left())
+//             upperBox.buy.set_border_color(color(na))
+//             upperBox.sell.set_right(upperBox.body.get_left())
+//             upperBox.sell.set_border_color(color(na))
+//             upperBox.body.set_right(upperBox.body.get_left())
+//             upperBox.body.set_border_color(color(na))
+//         upperBox.body := box.new(Highs.index, Highs.val + atr1, bar_index, Highs.val, bgcolor = color(na), border_color = boxUpCol, text_halign = text.align_right, border_width = 2)
+//         upperBox.buy := box.new(Highs.index, math.avg(Highs.val + atr1, Highs.val), Highs.index, Highs.val, border_color = boxUpCol, bgcolor = color.new(boxUpCol, 90), text_halign = text.align_left)
+//         upperBox.sell := box.new(Highs.index, math.avg(Highs.val + atr1, Highs.val), Highs.index, Highs.val + atr1, border_color = boxUpCol, bgcolor = color.new(boxUpCol, 90), text_halign = text.align_left)
+//     Highs.val := bb_ph
+//     Highs.index := bar_index[pivotLen]
+
+if not na(bb_pl)
+    if math.abs(Lows.val - bb_pl) < atr0
+        if lowerBox.body.get_right() > bar_index - pivotLen
+//             lowerBox.buy.set_right(lowerBox.body.get_left())
+//             lowerBox.buy.set_border_color(color(na))
+//             lowerBox.sell.set_right(lowerBox.body.get_left())
+//             lowerBox.sell.set_border_color(color(na))
+//             lowerBox.body.set_right(lowerBox.body.get_left())
+//             lowerBox.body.set_border_color(color(na))
+//         lowerBox.body := box.new(Lows.index, Lows.val, bar_index, Lows.val - atr2, bgcolor = color(na), border_color = boxDnCol, text_halign = text.align_right, border_width = 2)
+//         lowerBox.buy := box.new(Lows.index, math.avg(Lows.val - atr2, Lows.val), Lows.index, Lows.val - atr2, border_color = boxDnCol, bgcolor = color.new(boxDnCol, 90), text_halign = text.align_left)
+//         lowerBox.sell := box.new(Lows.index, math.avg(Lows.val - atr2, Lows.val), Lows.index, Lows.val, border_color = boxDnCol, bgcolor = color.new(boxDnCol, 90), text_halign = text.align_left)
+//     Lows.val := bb_pl
+//     Lows.index := bar_index[pivotLen]
+
+// ───────────────────────────────
+// OSOM WV Entry Signals
+// ───────────────────────────────
+crossOver = ta.crossover(close, upperBand[1])
+crossUnder = ta.crossunder(close, lowerBand[1])
+buySignal  = showSignals and crossOver
+sellSignal = showSignals and crossUnder
+
+// alertcondition(buySignal, title = "Buy Signal", message = "Buy Signal Triggered")
+// alertcondition(sellSignal, title = "Sell Signal", message = "Sell Signal Triggered")
+
+// ───────────────────────────────
+// OSOM WV Signal Positions
+// ───────────────────────────────
+signalOffset = atr * 0.5
+buyY  = lowerBand - signalOffset
+sellY = upperBand + signalOffset
+
+var int trendMode = 0   //  1 = long active, -1 = short active, 0 = neutral
+
+// ───────────────────────────────
+// OSOM WV RSI EMA Filter
+// ───────────────────────────────
+rsi      = ta.rsi(close, 14)
+rsiEma7  = ta.ema(rsi, 7)
+rsiSlope = rsiEma7 - rsiEma7[1]
+
+// ───────────────────────────────
+// OSOM WV Persistent States
+// ───────────────────────────────
+var bool canBearTP = true
+var bool canBullTP = true
+var int  lastBuyBackBar = na
+
+// ───────────────────────────────
+// OSOM WV Take Profit Signal Logic
+// ───────────────────────────────
+bearishTP = false
+bullishTP = false
+if enableTP
+    dist  = close - trendLine
+    mean  = ta.sma(dist, len)
+    stdev = ta.stdev(dist, len)
+    zDist = stdev != 0 ? (dist - mean) / stdev : na
+
+//     bearishTP := trendState == 1 and zDist > tpThreshold and rsiEma7 > 70 and rsiSlope < 0 and canBearTP
+//     bullishTP := trendState == -1 and zDist < -tpThreshold and rsiEma7 < 30 and rsiSlope > 0 and canBullTP
+
+    if bearishTP
+//         label.new(bar_index, high + atr * 0.3, "✖", style = label.style_none, color = color.new(bearColor, 0), textcolor = color.white, size = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : size.normal)
+//         canBearTP := false
+
+    if bullishTP
+//         label.new(bar_index, low - atr * 0.3, "✖", style = label.style_none, color = color.new(bullColor, 0), textcolor = color.white, size = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : size.normal)
+//         canBullTP := false
+
+    if rsiEma7 < 70
+//         canBearTP := true
+    if rsiEma7 > 30
+//         canBullTP := true
+
+// ───────────────────────────────
+// OSOM WV Buy-Back Logic with Cooldown
+// ───────────────────────────────
+bullTouch = false
+bearTouch = false
+canTriggerBB = na(lastBuyBackBar) or (bar_index - lastBuyBackBar > buyBackCooldown)
+if enableBuyBack
+    wickLow  = low
+    wickHigh = high
+//     bullTouch := trendState == 1 and wickLow <= lowerBand and close > lowerBand
+//     bearTouch := trendState == -1 and wickHigh >= upperBand and close < upperBand
+
+    if canTriggerBB and bullTouch
+//         label.new(bar_index, low - atr * 0.2, "↻", style = label.style_label_up, textcolor = color.white, size = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : size.normal, color = color.new(bullColor,60))
+//         lastBuyBackBar := bar_index
+
+    if canTriggerBB and bearTouch
+//         label.new(bar_index, high + atr * 0.2, "↻", style = label.style_label_down, textcolor = color.white, size = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : size.normal, color = color.new(bearColor,60))
+//         lastBuyBackBar := bar_index
+
+// ───────────────────────────────
+// OSOM WV Entry Logic
+// ───────────────────────────────
+if buySignal and trendMode != 1
+//     trendMode := 1
+//     string buyText = "↑"
+    if showForecast
+//         string avgStr = na(prevForecast) ? "?" : str.tostring(math.round(prevForecast))
+//         buyText += " 1/" + avgStr
+//     lastBuy := label.new(bar_index, buyY + (atr * input.float(0.0, "Buy Offset", group = "OSOM WV Settings")), buyText, style = label.style_label_up, textcolor = color.white, color = bullColor, size = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : size.normal)
+
+if sellSignal and trendMode != -1
+//     trendMode := -1
+//     string sellText = "↓"
+    if showForecast
+//         string avgStr = na(prevForecast) ? "?" : str.tostring(math.round(prevForecast))
+//         sellText += " 1/" + avgStr
+//     lastSell := label.new(bar_index, sellY + (atr * input.float(0.0, "Sell Offset", group = "OSOM WV Settings")), sellText, style = label.style_label_down, textcolor = color.white, color = bearColor, size = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : size.normal)
+
+if not na(trend) and showForecast
+//     label curLabel = trend == 1.0 ? lastBuy : lastSell
+    if not na(curLabel)
+//         string arrow = trend == 1.0 ? "↑" : "↓"
+//         string avgStr = na(prevForecast) ? "?" : str.tostring(math.round(prevForecast))
+//         string txt = arrow + " " + str.tostring(Trendcount) + "/" + avgStr
+//         label.set_text(curLabel, txt)
+
+// ───────────────────────────────
+// Breakout Boxes Visualization
+// ───────────────────────────────
+if not na(upperBox.body)
+//     float Buy = 0.0
+//     float Sell = 0.0
+//     upperBox.body.set_right(bar_index)
+    for i = 0 to bar_index - (upperBox.body.get_left() - 5)
+        if close[i] > open[i]
+//             Buy += volume[i]
+//         else
+//             Sell += volume[i]
+//     float tot = Buy + Sell
+//     upperBox.body.set_text("Total " + str.tostring(tot, format.volume))
+//     int size = int(upperBox.body.get_right() - upperBox.body.get_left())
+//     float mid = math.avg(upperBox.body.get_bottom(), upperBox.body.get_top())
+//     upperBox.buy.set_right(upperBox.body.get_left() + int(size * (Buy / tot)))
+//     upperBox.buy.set_text("+Volume " + str.tostring(Buy/tot*100, format.percent) )
+//     upperBox.sell.set_right(upperBox.body.get_left() + int(size * (Sell / tot)))
+//     upperBox.sell.set_text("-Volume " + str.tostring(Sell/tot*100, format.percent) )
+
+if not na(lowerBox.body)
+//     float Buy = 0.0
+//     float Sell = 0.0
+//     lowerBox.body.set_right(bar_index)
+    for i = 0 to bar_index - (lowerBox.body.get_left() - 5)
+        if close[i] > open[i]
+//             Buy += volume[i]
+//         else
+//             Sell += volume[i]
+//     float tot = Buy + Sell
+//     lowerBox.body.set_text("Total " + str.tostring(tot, format.volume))
+//     int size = int(lowerBox.body.get_right() - lowerBox.body.get_left())
+//     float mid = math.avg(lowerBox.body.get_bottom(), lowerBox.body.get_top())
+//     lowerBox.buy.set_right(lowerBox.body.get_left() + int(size * (Buy / tot)))
+//     lowerBox.buy.set_text("+Volume " + str.tostring(Buy/tot*100, format.percent) )
+//     lowerBox.sell.set_right(lowerBox.body.get_left() + int(size * (Sell / tot)))
+//     lowerBox.sell.set_text("-Volume " + str.tostring(Sell/tot*100, format.percent) )
+
+// ───────────────────────────────
+// Breakout Conditions
+// ───────────────────────────────
+upper_top = na(upperBox.body) ? na : upperBox.body.get_top()
+lower_bottom = na(lowerBox.body) ? na : lowerBox.body.get_bottom()
+breakUp = ta.crossover(close, upper_top)
+breakDn = ta.crossunder(close, lower_bottom)
+
+// ───────────────────────────────
+// Breakout Signals
+// ───────────────────────────────
+if barstate.isconfirmed
+    if breakUp
+//         upperBox := Box.new(na, na, na)
+//         label.new(bar_index, low - aTr, "⯁\nBreakUp", textcolor = boxUpCol, style = label.style_label_up, color = color.new(boxUpCol, 80))
+    if breakDn
+//         lowerBox := Box.new(na, na, na)
+//         label.new(bar_index, high + aTr, "BreakDn\n⯁", textcolor = boxDnCol, style = label.style_label_down, color = color.new(boxDnCol, 80))
+
+// Add alerts for BreakUp and BreakDn
+// alertcondition(breakUp, title = "BreakUp", message = "BreakUp Triggered")
+// alertcondition(breakDn, title = "BreakDn", message = "BreakDn Triggered")
+
+// ───────────────────────────────
+// MMB Colors
+// ───────────────────────────────
+c_blue = #0041ff
+c_cyan = #00c1ff
+c_green = #00ffbe
+
+c_pink = #ff00c1
+c_red = #ff0041
+c_orange = #ffbe00
+
+// ───────────────────────────────
+// MMB Functions
+// ───────────────────────────────
+// f_no_paint(_series) => _series[barstate.isrealtime ? 1 : 0]
+
+// f_symbol_divided(sym) => array.size(str.split(sym, "/")) > 1
+// f_symbol_count(sym) => array.size(str.split(sym, "+"))
+
+// f_get_ohlcv(sym) =>
+    div = f_symbol_divided(sym) ? 1 : f_symbol_count(sym)
+    [f_no_paint(open)/div, f_no_paint(high)/div, f_no_paint(low)/div, f_no_paint(close)/div, f_no_paint(volume)]
+
+// f_pvsra(o, h, l, c, v) =>
+    av = math.sum(v, i_pvlen) / i_pvlen
+    value2 = v * (h - l)
+    hivalue2 = ta.highest(value2, i_pvlen)
+    va = (v >= (av * i_climax_mult) or value2 >= hivalue2) ? 1 : (v >= (av * i_rising_mult) ? 2 : 0)
+    isBull = c > o
+    [av, value2, hivalue2, va, isBull]
+
+pvsra_symbol = i_use_override ? i_override : syminfo.tickerid
+[po, ph, pl, pc, pv] = request.security(pvsra_symbol, timeframe.period, f_get_ohlcv(pvsra_symbol), barmerge.gaps_off, barmerge.lookahead_off)
+[av, value2, hivalue2, va, isBull] = f_pvsra(po, ph, pl, pc, pv)
+
+// ───────────────────────────────
+// MMB Calculations - PVSRA
+// ───────────────────────────────
+bull_normal_candle = isBull and va == 0
+bull_climax_candle = isBull and va == 1
+bull_rising_candle = isBull and va == 2
+
+bear_normal_candle = not isBull and va == 0
+bear_climax_candle = not isBull and va == 1
+bear_rising_candle = not isBull and va == 2
+
+// ───────────────────────────────
+// MMB Calculations - BULL/BEAR
+// ───────────────────────────────
+bull_volume_normal = bull_normal_candle ? volume : 0.0
+bull_volume_climax = bull_climax_candle ? volume : 0.0
+bull_volume_rising = bull_rising_candle ? volume : 0.0
+bear_volume_normal = bear_normal_candle ? volume : 0.0
+bear_volume_climax = bear_climax_candle ? volume : 0.0
+bear_volume_rising = bear_rising_candle ? volume : 0.0
+
+bull_normal = math.sum(bull_volume_normal, i_len)
+bull_rising = math.sum(bull_volume_rising, i_len)
+bull_climax = math.sum(bull_volume_climax, i_len)
+
+bear_normal = math.sum(bear_volume_normal, i_len)
+bear_rising = math.sum(bear_volume_rising, i_len)
+bear_climax = math.sum(bear_volume_climax, i_len)
+
+// we invert the calculation, to bear - bull, because we want to see what MM's see! red candles = MM's going long, green candles = MM's going short
+bull_bear_rising = ta.ema(bear_rising - bull_rising, i_smooth)
+bull_bear_climax = ta.ema(bear_climax - bull_climax, i_smooth)
+bull_bear_delta = (bull_climax + bull_rising) - (bear_climax + bear_rising)
+bull_bear_mm = ta.ema(bull_bear_delta, i_smooth)
+
+// calculate pins to the high and low, spikes that are 2x average size, and count them
+pin_high_size = high - math.max(close, open)
+pin_low_size = low - math.min(close, open)
+
+avg_high_size = ta.sma(pin_high_size, i_len)
+avg_low_size = ta.sma(pin_low_size, i_len)
+
+spike_high = pin_high_size >= (avg_high_size * 2)
+spike_low = pin_low_size >= (avg_low_size * 2)
+
+spike_high_count = math.sum(spike_high ? 1 : 0, i_len)
+spike_low_count = math.sum(spike_low ? 1 : 0, i_len)
+
+spike_delta = spike_high_count - spike_low_count
+
+// calculate the last high and low of the MMB
+var last_high = 10e-10
+var last_low = 10e10
+
+new_high = bull_bear_mm > 0 and bull_bear_mm > last_high
+new_low = bull_bear_mm < 0 and bull_bear_mm < last_low
+
+if bull_bear_mm > 0
+//     last_high := math.max(bull_bear_mm, last_high)
+if bull_bear_mm < 0
+//     last_low := math.min(bull_bear_mm, last_low)
+
+// reset after each cycle
+if ta.crossunder(bull_bear_mm, 0)
+//     last_low := 10e10
+if ta.crossover(bull_bear_mm, 0)
+//     last_high := 10e-10
+
+build_long = bull_bear_mm < 0 and bull_bear_mm > last_low and bear_climax_candle
+build_short = bull_bear_mm > 0 and bull_bear_mm < last_high and bull_climax_candle
+close_long = bull_bear_mm > 0 and new_high and bull_climax_candle
+close_short = bull_bear_mm < 0 and new_low and bear_climax_candle
+
+// ───────────────────────────────
+// MMB CONDITIONS & SIGNALS
+// ───────────────────────────────
+mm_cross_up = ta.crossover(bull_bear_mm, 0)
+mm_cross_down = ta.crossunder(bull_bear_mm, 0)
+mm_long = bull_bear_mm > 0
+rising_cross_up = ta.crossover(bull_bear_rising, bull_bear_climax)
+rising_cross_down = ta.crossunder(bull_bear_rising, bull_bear_climax)
+rising_long = bull_bear_rising > 0
+
+bte_signal = mm_cross_up ? 2.0 : mm_cross_down ? -2.0 : mm_long ? 1.0 : -1.0
+
+// ───────────────────────────────
+// MMB PLOTS on Price Chart
+// ───────────────────────────────
+plotshape(build_long, title = "Build Long", style = shape.cross, location = location.belowbar, color = c_green, size = size.tiny)
+plotshape(build_short, title = "Build Short", style = shape.cross, location = location.abovebar, color = c_red, size = size.tiny)
+plotshape(close_long, title = "Close Long", style = shape.xcross, location = location.abovebar, color = c_green, size = size.tiny)
+plotshape(close_short, title = "Close Short", style = shape.xcross, location = location.belowbar, color = c_red, size = size.tiny)
+
+// ───────────────────────────────
+// MMB ALERTS
+// ───────────────────────────────
+// alertcondition(mm_cross_up, title = "MMB crossing above 0")
+// alertcondition(mm_cross_down, title = "MMB crossing below 0")
+// alertcondition(rising_cross_up, title = "Rising crossing above Climax")
+// alertcondition(rising_cross_down, title = "Rising crossing below Climax")
+
+// ───────────────────────────────
+// TR PVSRA Coloring and Alerts
+// ───────────────────────────────
+[pvsraColor, alertFlag, averageVolume, volumeSpread, highestVolumeSpread] = trLib.calcPvsra(pv, ph, pl, pc, po, redVectorColor, greenVectorColor, violetVectorColor, blueVectorColor, regularCandleDownColor, regularCandleUpColor)
+
+// alertcondition(alertFlag, title='Alert on Any Vector Candle', message='{{ticker}} Vector Candle on the {{interval}}')
+// alertcondition(pvsraColor == greenVectorColor, title='Green Vector Candle', message='{{ticker}} Green Vector Candle on the {{interval}} Note: alert triggers in real time before the candle is closed unless you choose "once per bar close" option - ie the alert might trigger at some point and the pa after that could change the vector color completely. Use with caution.')
+// alertcondition(pvsraColor == redVectorColor, title='Red Vector Candle', message='{{ticker}} Red Vector Candle on the {{interval}} Note: alert triggers in real time before the candle is closed unless you choose "once per bar close" option- ie the alert might trigger at some point and the pa after that could change the vector color completely. Use with caution.')
+// alertcondition(pvsraColor == blueVectorColor, title='Blue Vector Candle', message='{{ticker}} Blue Vector Candle on the {{interval}} Note: alert triggers in real time before the candle is closed unless you choose "once per bar close" option- ie the alert might trigger at some point and the pa after that could change the vector color completely. Use with caution.')
+// alertcondition(pvsraColor == violetVectorColor, title='Purple Vector Candle', message='{{ticker}} Purple Vector Candle on the {{interval}} Note: alert triggers in real time before the candle is closed unless you choose "once per bar close" option- ie the alert might trigger at some point and the pa after that could change the vector color completely. Use with caution.')
+redGreen = pvsraColor == greenVectorColor and pvsraColor[1] == redVectorColor
+greenRed = pvsraColor == redVectorColor and pvsraColor[1] == greenVectorColor
+redBlue = pvsraColor == blueVectorColor and pvsraColor[1] == redVectorColor
+blueRed = pvsraColor == redVectorColor and pvsraColor[1] == blueVectorColor
+greenPurpule = pvsraColor == violetVectorColor and pvsraColor[1] == greenVectorColor
+purpleGreen = pvsraColor == greenVectorColor and pvsraColor[1] == violetVectorColor
+bluePurpule = pvsraColor == violetVectorColor and pvsraColor[1] == blueVectorColor
+purpleBlue = pvsraColor == blueVectorColor and pvsraColor[1] == violetVectorColor
+// alertcondition(redGreen, title='Red/Green Vector Candle Pattern', message='{{ticker}} Red/Green Vector Candle Pattern on the {{interval}}')
+// alertcondition(greenRed, title='Green/Red Vector Candle Pattern', message='{{ticker}} Green/Red Vector Candle Pattern on the {{interval}}')
+// alertcondition(redBlue, title='Red/Blue Vector Candle Pattern', message='{{ticker}} Red/Blue Vector Candle Pattern on the {{interval}}')
+// alertcondition(blueRed, title='Blue/Red Vector Candle Pattern', message='{{ticker}} Blue/Red Vector Candle Pattern on the {{interval}}')
+// alertcondition(greenPurpule, title='Green/Purple Vector Candle Pattern', message='{{ticker}} Green/Purple Vector Candle Pattern on the {{interval}}')
+// alertcondition(purpleGreen, title='Purple/Green Vector Candle Pattern', message='{{ticker}} Purple/Green Vector Candle Pattern on the {{interval}}')
+// alertcondition(bluePurpule, title='Blue/Purple Vector Candle Pattern', message='{{ticker}} Blue/Purple Vector Candle Pattern on the {{interval}}')
+// alertcondition(purpleBlue, title='Purple/Blue Vector Candle Pattern', message='{{ticker}} Purple/Blue Vector Candle Pattern on the {{interval}}')
+
+// ───────────────────────────────
+// Vector Candle Zones
+// ───────────────────────────────
+var zoneBoxesAbove = array.new_box()
+var zoneBoxesBelow = array.new_box()
+if showVCZ
+    pvsra = trLib.getPvsraFlagByColor(pvsraColor, redVectorColor, greenVectorColor, violetVectorColor, blueVectorColor, regularCandleUpColor)
+//     trLib.updateZones(pvsra, 0, zoneBoxesBelow, zonesMax, ph, pl, po, pc, transperancy, zoneUpdateType, zoneColor, zoneType, borderWidth, colorOverride, redVectorColor, greenVectorColor, violetVectorColor, blueVectorColor)
+//     trLib.updateZones(pvsra, 1, zoneBoxesAbove, zonesMax, ph, pl, po, pc, transperancy, zoneUpdateType, zoneColor, zoneType, borderWidth, colorOverride, redVectorColor, greenVectorColor, violetVectorColor, blueVectorColor)
+//     trLib.cleanarr(zoneBoxesAbove)
+//     trLib.cleanarr(zoneBoxesBelow)
+
+
+// ───────────────────────────────
+// OSOM WV Plots
+// ───────────────────────────────
+pUpper  = plot(showCloud ? upperBand : na, "Upper Band", color = color.new(trendCol, 60))
+pLower  = plot(showCloud ? lowerBand : na, "Lower Band", color = color.new(trendCol, 60))
+pLine   = plot(showCloud or showLine ? trendLine : na, "Trend Line", color = trendCol, linewidth = 1)
+pSingle = plot(showSingle ? singleBand : na, "Active Band", color = color.new(trendCol, 30), linewidth = 1)
+
+fill(pUpper, pLower, color = showCloud ? color.new(trendCol, 85) : na)
+
+pClose = plot(showSingle ? close : na, display = display.none)
+
+fill(pSingle, pClose, color = color.new(trendCol, 80))
+
+
+// ───────────────────────────────
+// Final Coloring
+// ───────────────────────────────
+regularColor = close > open ? regularCandleUpColor : regularCandleDownColor
+// color finalCol = pvsraColor == regularColor ? trendCol : pvsraColor
+barcolor(finalCol)
+// plotcandle(open, high, low, close, color = finalCol, wickcolor = finalCol, bordercolor = finalCol, force_overlay = true)
+
+// ───────────────────────────────
+// CVD Visuals (Bar Coloring & Table)
+// ───────────────────────────────
+barcolor(colorbars ? colorTrend : na)
+
+// Alerts for CVD Long and Short only (enter)
+// alertcondition(long_state and not long_state[1], title="CVD Long Signal", message="CVD Long Confirmed")
+// alertcondition(short_state and not short_state[1], title="CVD Short Signal", message="CVD Short Confirmed")
+
+// Font Size Picker
+// font_size_picker(font_size) =>
+//     switch font_size
+//         "tiny" => size.tiny
+//         "small" => size.small
+//         "normal" => size.normal
+//         "large" => size.large
+
+// Compact Status Table (Shown Only If Enabled)
+if show_cvd_table
+    var table market_state = table.new(position.top_right, 2, 5, border_width=1, frame_color=color.new(color.blue, 70), bgcolor=color.new(color.black, 95))
+//     table.cell(market_state, 0, 0, "CVD", bgcolor=color.new(color.blue, 80), text_color=color.white, text_size=font_size_picker(font_size_table_option))
+//     table.cell(market_state, 1, 0, "Status", bgcolor=color.new(color.blue, 80), text_color=color.white, text_size=font_size_picker(font_size_table_option))
+    
+//     table.cell(market_state, 0, 1, "Long", text_color=color.gray, text_size=font_size_picker(font_size_table_option))
+//     table.cell(market_state, 1, 1, is_long ? "✓" : "✗", text_color=is_long ? color.green : color.red, text_size=font_size_picker(font_size_table_option))
+    
+//     table.cell(market_state, 0, 2, "Short", text_color=color.gray, text_size=font_size_picker(font_size_table_option))
+//     table.cell(market_state, 1, 2, is_short ? "✓" : "✗", text_color=is_short ? color.green : color.red, text_size=font_size_picker(font_size_table_option))
+    
+//     table.cell(market_state, 0, 3, "Test", text_color=color.gray, text_size=font_size_picker(font_size_table_option))
+//     table.cell(market_state, 1, 3, is_test ? "✓" : "✗", text_color=is_test ? color.orange : color.red, text_size=font_size_picker(font_size_table_option))
+    
+//     table.cell(market_state, 0, 4, "Sideways", text_color=color.gray, text_size=font_size_picker(font_size_table_option))
+//     table.cell(market_state, 1, 4, is_sideways ? "✓" : "✗", text_color=is_sideways ? color.yellow : color.red, text_size=font_size_picker(font_size_table_option))
+
+
+
+//     How to Use the OSOM Breakers Indicator
+// The OSOM Breakers indicator is a customizable overlay tool for TradingView (Pine Script v5) that identifies market structure patterns, breakouts, breakers (order blocks), and price targets based on pivots, higher highs/lows (HH/LL), and breaks of structure (BoS/MSB). It helps visualize bullish/bearish trends, potential reversals, and target levels, with a focus on institutional "order blocks" (OB) for support/resistance. The indicator supports alerts indirectly through plotted events and is optimized for volatile markets like forex, crypto, or indices.
+// 1. Adding the Indicator to Your Chart
+
+// Open TradingView (tradingview.com) and load a chart for your desired asset.
+// Click the "Indicators" button at the top.
+// Search for "OSOM Breakers" (if community-shared) or add via Pine Editor:
+// Open the Pine Editor tab at the bottom.
+// Paste the provided code (from //version=5 to the end).
+// Click "Save" and name it (e.g., "OSOM Breakers").
+// Click "Add to Chart".
+
+// The indicator overlays on your chart with defaults like dashed zigzag lines, HH/LL labels, and green/red colors for bull/bear elements.
+
+// 2. Configuring Inputs
+
+// Click the gear icon next to the indicator name in the legend to access settings.
+// Inputs are grouped:
+// Nephew_Sam Market Structure Settings: Pivot strength (default 5; higher for smoother, lower for sensitivity). Toggles for zigzag lines, BoS lines, HH/LL labels, and pattern matches.
+// Nephew_Sam Bull/Bear Patterns: Pre-defined sequences (e.g., "LL,LH,LL,HH,HL" for bull patterns) with text labels (e.g., "BOS HL 1") and toggles. Customize up to 7 per direction for specific setups like BOS (break of structure) or MSS (market structure shift).
+// Nephew_Sam Styles: Colors for HH/LL (green up, red down), labels, zigzag style (dashed/dotted), and width (1-4).
+// Market Structure Break Targets Settings: Max duration (250 bars), calculation method (Percent or ATR), ATR multiplier (2.0). Enable/disable bull/bear MSB/BoS, set colors (green/red), and % targets (100% default).
+// Breakers Settings: Max breaks (1; increase for stricter breaker confirmation), max duration (1000 bars). Colors for bullish MS (green), bull breaker (red), bearish MS (red), bear breaker (green).
+
+// Defaults suit 15m-1h charts; reduce pivot strength for scalping (1m-5m) or increase for daily+. Test patterns on historical data to match your strategy.
+
+// 3. Interpreting the Visuals and Signals
+
+// Zigzag and HH/LL Labels:
+// Dashed/dotted lines connect pivots; green for upswings, red for downswings (if enabled).
+// Labels like "HH" (higher high), "LH" (lower high), "LL" (lower low), "HL" (higher low) appear at pivots. Green for bullish, red for bearish.
+
+// Pattern Matches:
+// Labels (e.g., "BOS HL 1") at pivots when sequences match user-defined bull/bear conditions. Up arrows for bull, down for bear.
+// Use for spotting reversals or continuations (e.g., bull pattern after downtrend signals potential long).
+
+// Market Structure Breaks (MSB/BoS):
+// Solid lines: Green for bullish MSB/BoS (break above prior high), red for bearish (break below prior low).
+// Labels: "MSB" or "MSS" (shift) at breaks, "BoS" for breaks of structure.
+// Boxes: Translucent green/red "OB" (order block) boxes highlight ranges before breaks – potential support (post-bull break) or resistance (post-bear).
+
+// Targets:
+// Dotted horizontal/vertical lines extend from breaks to projected targets (percent of range or ATR-based).
+// Active until hit or expired (after max duration). Green for bull targets (above), red for bear (below).
+
+// Breakers:
+// Dotted lines: Recent MSB/BoS levels that act as breakers (e.g., red dotted for bull breaker).
+// Plotted shapes: "▲" (green below bar) for bull MSB breakout, "▼" (red above) for bear.
+// Candle borders: Green for support events (price tests breaker from above), red for resistance (from below).
+
+// Overall Direction: Tracks bullish (1) or bearish (-1) based on recent breaks; use for trend bias.
+
+// 4. Trading Strategies
+
+// Breakout Trading: Enter long on green "▲" (bull breakout) above MSB/BoS lines; short on red "▼" below. Target dotted lines (e.g., 100% of prior range).
+// Order Block (OB) Plays: Buy at green OB boxes (support after bull break), sell at red (resistance after bear). Confirm with support/resistance events.
+// Pattern-Based Reversals: Long on bull patterns (e.g., "BOS HL") after bearish structure; short on bear patterns. Filter with HH/LL (e.g., HH after LL signals uptrend).
+// Trend Continuation: In bullish direction, stack longs on BoS breaks; use breakers as trailing stops.
+// Risk Management: Stops below recent LL (longs) or above HH (shorts). Position size based on ATR (from targets). Avoid choppy markets by disabling patterns.
+// Timeframes: Scalping (1m-15m with low pivot strength), swing (1h-4h), position (daily with higher strength). Combine with volume indicators for confirmation.
+
+// 5. Alerts and Automation
+
+// No built-in alertcondition(); set manual alerts in TradingView:
+// Right-click chart > Add Alert > Condition (e.g., "OSOM Breakers - Bull MSB Breakout" crosses 1 for "▲").
+// Or alert on close crossing MSB/BoS lines (use indicator plots as conditions).
+
+// For strategies: Convert to a strategy script by adding strategy() entries/exits based on breaks/patterns.
+
+// 6. Tips and Best Practices
+
+// Asset Suitability: Ideal for trending markets (e.g., BTC/USD, EUR/USD). Less effective in ranging; toggle off zigzag/boxes to reduce clutter.
+// Performance: Limits (500 lines/boxes/labels) prevent overload; delete oldest automatically. Backtest on replay mode.
+// Customization: Add custom patterns (e.g., for ICT/SMC concepts like fair value gaps). Match colors to your theme.
+// Limitations: Relies on pivots – false signals in low-volatility; no volume integration (pair with another indicator). Targets are projections, not guarantees.
+// Enhancements: Combine with OSOM Trend for volume confirmation. Practice on demo charts.
+
+// This indicator provides a structured view of price action, emphasizing breaks and targets for systematic trading. Always validate with multiple timeframes and risk controls.

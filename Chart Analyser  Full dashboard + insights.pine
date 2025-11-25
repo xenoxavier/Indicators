@@ -1,0 +1,207 @@
+// Chart Analyser — Full dashboard + insights
+
+//@version=5
+indicator("Chart Analyser — Full dashboard + insights (with colour options)", overlay=true, max_labels_count=200, max_lines_count=200)
+
+// ===== Inputs: colours =====
+emaFastColor  = input.color(color.orange, "EMA Fast colour")
+emaMedColor   = input.color(color.yellow, "EMA Med colour")
+emaSlowColor  = input.color(color.blue, "EMA Slow colour")
+vwapColor     = input.color(color.purple, "VWAP colour")
+bbFillColor   = input.color(color.new(color.gray, 90), "BB fill (visual only)")
+bbLineColor   = input.color(color.gray, "BB line colour")
+
+pivotShapeHighColor = input.color(color.red, "Pivot High shape colour")
+pivotShapeLowColor  = input.color(color.green, "Pivot Low shape colour")
+pivotLabelHighColor = input.color(color.red, "Pivot High label base colour")
+pivotLabelLowColor  = input.color(color.green, "Pivot Low label base colour")
+
+barBullColor  = input.color(color.new(color.green, 0), "Bull bar colour")
+barBearColor  = input.color(color.new(color.red, 0), "Bear bar colour")
+dashboardBgCol = input.color(color.new(color.black, 0), "Dashboard background colour")
+dashboardTextCol = input.color(color.white, "Dashboard text colour")
+
+// ===== Inputs: analysis & visuals =====
+lenFast = input.int(21, "Fast EMA", minval=1)
+lenMed  = input.int(50, "Medium EMA", minval=1)
+lenSlow = input.int(200, "Slow EMA", minval=1)
+
+rsiLen = input.int(14, "RSI Length", minval=1)
+rsiOB  = input.int(70, "RSI Overbought", minval=1)
+rsiOS  = input.int(30, "RSI Oversold", minval=1)
+
+adxLen = input.int(14, "ADX Length", minval=1)
+adxSmooth = input.int(14, "ADX Smoothing", minval=1)
+atrLen = input.int(14, "ATR Length", minval=1)
+bbLen  = input.int(20, "BB Length", minval=1)
+bbMult = input.float(2.0, "BB Multiplier", step=0.1)
+
+macdFast = input.int(12, "MACD Fast", minval=1)
+macdSlow = input.int(26, "MACD Slow", minval=1)
+macdSig  = input.int(9,  "MACD Signal", minval=1)
+
+volMaLen = input.int(20, "Volume MA Length", minval=1)
+volMult  = input.float(2.0, "Volume spike multiplier", step=0.1)
+
+pivotLeft  = input.int(5, "Pivot Left", minval=1)
+pivotRight = input.int(5, "Pivot Right", minval=1)
+showPivotLabels = input.bool(true, "Show pivot labels")
+showPivotShapes = input.bool(true, "Show pivot shapes")
+labelGapLines = input.int(1, "Label gap lines", minval=0, maxval=3)
+labelOpacity = input.int(60, "Label opacity (0-100)", minval=0, maxval=100)
+
+showDashboard = input.bool(true, "Show dashboard (top-right)")
+dashboardCols = input.int(1, "Dashboard columns", minval=1, maxval=3)
+dashboardRows = input.int(6, "Dashboard rows", minval=1, maxval=20)
+
+// ===== Price + core indicators =====
+price = close
+emaF = ta.ema(price, lenFast)
+emaM = ta.ema(price, lenMed)
+emaS = ta.ema(price, lenSlow)
+
+trendBull = emaF > emaM and emaM > emaS
+trendBear = emaF < emaM and emaM < emaS
+trendText = trendBull ? "Bull" : trendBear ? "Bear" : "Neutral"
+
+// RSI
+rsi = ta.rsi(price, rsiLen)
+rsiState = rsi > rsiOB ? "Overbought" : rsi < rsiOS ? "Oversold" : "Neutral"
+
+// ADX via ta.dmi (explicit smoothing parameter)
+[pdi, mdi, adx] = ta.dmi(adxLen, adxSmooth)
+adxText = adx >= 25 ? "Strong" : adx >= 20 ? "Moderate" : "Weak"
+
+// MACD
+[macdLine, macdSignal, macdHist] = ta.macd(price, macdFast, macdSlow, macdSig)
+macdDir = macdHist > 0 ? "Bullish hist" : macdHist < 0 ? "Bearish hist" : "Flat hist"
+
+// ATR + BB (volatility)
+atr = ta.atr(atrLen)
+basis = ta.sma(price, bbLen)
+dev = bbMult * ta.stdev(price, bbLen)
+bbUpper = basis + dev
+bbLower = basis - dev
+bbWidth = (basis == 0) ? 0 : (2 * dev) / basis
+squeeze = bbWidth < ta.highest(bbWidth, 50)[1] * 0.6
+
+// Volume
+volMA = ta.sma(volume, volMaLen)
+volSpike = volume > volMA * volMult
+volText = volume > volMA ? "Above avg" : "Below avg"
+
+// VWAP
+vwap = ta.vwap
+vwapPos = price > vwap ? "Above VWAP" : price < vwap ? "Below VWAP" : "At VWAP"
+
+// Signals (example composite)
+bullSignal = trendBull and rsi < rsiOB and volSpike and price > emaM and macdHist > 0
+bearSignal = trendBear and rsi > rsiOS and volSpike and price < emaM and macdHist < 0
+signalText = bullSignal ? "Buy bias" : bearSignal ? "Sell bias" : "No clear bias"
+
+// ===== Pivots =====
+ph = ta.pivothigh(high, pivotLeft, pivotRight)
+pl = ta.pivotlow(low, pivotLeft, pivotRight)
+isPH = not na(ph)
+isPL = not na(pl)
+
+pBarHigh = isPH ? (bar_index - pivotRight) : na
+pBarLow  = isPL ? (bar_index - pivotRight) : na
+pHighVal = isPH ? high[pivotRight] : na
+pLowVal  = isPL ? low[pivotRight]  : na
+
+var float lastPivotHigh = na
+var float lastPivotLow  = na
+if isPH
+//     lastPivotHigh := pHighVal
+if isPL
+//     lastPivotLow := pLowVal
+
+distHigh = not na(lastPivotHigh) ? math.abs(price - lastPivotHigh) : na
+distLow  = not na(lastPivotLow)  ? math.abs(price - lastPivotLow)  : na
+
+// ===== Visuals: apply user colours ======
+plot(emaF, color=emaFastColor, title="EMA Fast")
+plot(emaM, color=emaMedColor, title="EMA Med")
+plot(emaS, color=emaSlowColor, title="EMA Slow")
+plot(vwap, title="VWAP", color=vwapColor, linewidth=2)
+plot(basis, title="BB basis", color=bbLineColor, linewidth=1)
+plot(bbUpper, title="BB upper", color=bbLineColor, linewidth=1)
+plot(bbLower, title="BB lower", color=bbLineColor, linewidth=1)
+fill(plot(basis, display=display.none), plot(bbUpper, display=display.none), color=bbFillColor) // visual fill
+
+barcolor(price > emaF ? barBullColor : price < emaF ? barBearColor : na)
+
+// label gap & colours
+gap = ""
+for i = 0 to labelGapLines - 1
+//     gap := gap + "\n"
+colH = color.new(pivotLabelHighColor, math.max(0, math.min(100, labelOpacity)))
+colL = color.new(pivotLabelLowColor, math.max(0, math.min(100, labelOpacity)))
+
+// pivot visuals (use user colours)
+shapeHighSeries = (isPH and showPivotShapes) ? pHighVal : na
+shapeLowSeries  = (isPL and showPivotShapes) ? pLowVal  : na
+plotshape(series = shapeHighSeries, title = "Pivot High shape", location = location.abovebar, style = shape.triangledown, color = pivotShapeHighColor, size = size.tiny)
+plotshape(series = shapeLowSeries,  title = "Pivot Low shape",  location = location.belowbar, style = shape.triangleup,   color = pivotShapeLowColor,  size = size.tiny)
+
+if isPH and showPivotLabels
+//     label.new(x = pBarHigh, y = pHighVal, xloc = xloc.bar_index, yloc = yloc.abovebar, text = "Pivot H" + gap + "\n" + str.tostring(pHighVal, format.mintick), style = label.style_label_down, color = colH, textcolor = color.white, size = size.tiny)
+if isPL and showPivotLabels
+//     label.new(x = pBarLow,  y = pLowVal,  xloc = xloc.bar_index, yloc = yloc.belowbar, text = "Pivot L" + gap + "\n" + str.tostring(pLowVal, format.mintick), style = label.style_label_up,   color = colL, textcolor = color.white, size = size.tiny)
+
+// ===== Insights generation (short human readable lines) =====
+insights = array.new_string()
+trendInsight = trendText + " trend; ADX " + str.tostring(adx, format.mintick)
+// array.push(insights, trendInsight)
+momDir = macdHist > 0 ? "MACD hist positive" : macdHist < 0 ? "MACD hist negative" : "MACD flat"
+rsiInsight = "RSI " + str.tostring(rsi, format.mintick) + " (" + rsiState + ")"
+// array.push(insights, momDir + " · " + rsiInsight)
+volInsight = "ATR " + str.tostring(atr, format.mintick) + " · BB width " + str.tostring(bbWidth, format.mintick) + (squeeze ? " (squeeze)" : "")
+// array.push(insights, volInsight)
+// array.push(insights, "Volume: " + volText + (volSpike ? " · Spike" : ""))
+// array.push(insights, vwapPos + " · " + signalText)
+
+srLine = ""
+if not na(lastPivotHigh)
+//     srLine := srLine + "Last R " + str.tostring(lastPivotHigh, format.mintick) + " (dist " + str.tostring(distHigh, format.mintick) + ")"
+if not na(lastPivotLow)
+//     srLine := srLine + (srLine == "" ? "" : " · ") + "Last S " + str.tostring(lastPivotLow, format.mintick) + " (dist " + str.tostring(distLow, format.mintick) + ")"
+if srLine == ""
+//     srLine := "No recent pivots"
+// array.push(insights, srLine)
+
+takeaway = ""
+if bullSignal
+//     takeaway := "Bias: BUY — trend aligned, momentum positive, volume supportive"
+// else if bearSignal
+//     takeaway := "Bias: SELL — trend aligned, momentum negative, volume supportive"
+// else
+//     takeaway := "No clear trade bias — wait for confirmation; watch VWAP and nearest pivot S/R"
+// array.push(insights, takeaway)
+
+// ===== Dashboard table (fixed) ======
+var table infoTable = na
+if na(infoTable)
+//     infoTable := table.new(position.top_right, dashboardCols, dashboardRows, border_width = 1)
+
+dbText = "Price: " + str.tostring(price, format.mintick) + "\n" +
+//          "Trend: " + trendText + " · ADX " + str.tostring(adx, format.mintick) + "\n" +
+//          "Signal: " + signalText + "\n" +
+//          "RSI: " + str.tostring(rsi, format.mintick) + " (" + rsiState + ")" + "\n" +
+//          "MACD: " + macdDir + " · hist " + str.tostring(macdHist, format.mintick) + "\n" +
+//          "ATR: " + str.tostring(atr, format.mintick) + " · BBw: " + str.tostring(bbWidth, format.mintick) + (squeeze ? " · Squeeze" : "") + "\n" +
+//          "Volume: " + volText + (volSpike ? " · Spike" : "") + "\n" +
+//          "VWAP: " + vwapPos + "\n" +
+//          (not na(lastPivotHigh) ? "Last R: " + str.tostring(lastPivotHigh, format.mintick) + " Dist: " + str.tostring(distHigh, format.mintick) + "\n" : "") +
+//          (not na(lastPivotLow)  ? "Last S: " + str.tostring(lastPivotLow, format.mintick)  + " Dist: " + str.tostring(distLow, format.mintick) + "\n" : "") +
+//          "Takeaway: " + takeaway
+
+if showDashboard
+//     table.cell(table_id = infoTable, column = 0, row = 0, text = dbText, text_color = dashboardTextCol, bgcolor = dashboardBgCol, text_size = size.small)
+// else
+//     table.clear(table_id = infoTable, start_column = 0, start_row = 0, end_column = dashboardCols - 1, end_row = dashboardRows - 1)
+
+// ===== Alerts (examples) ======
+// alertcondition(bullSignal, title="ANALYSER Buy Bias", message="Analyser: Buy bias detected on {{ticker}} at {{close}}")
+// alertcondition(bearSignal, title="ANALYSER Sell Bias", message="Analyser: Sell bias detected on {{ticker}} at {{close}}")

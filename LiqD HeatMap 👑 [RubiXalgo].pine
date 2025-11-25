@@ -1,0 +1,1562 @@
+// LiqD HeatMap 👑 [RubiXalgo]
+
+
+
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Jesse_Geluk
+
+//  Figure 1:   Rubik's Cube Rotates Inside Figure 2                    
+//                       [SUPPLY] 
+//  ::..                     |                    ..:::  
+//   .....                   |                  ......
+//    .••••::.               |               :••••••. 
+//     .:•••••:.             |            :::••••••.  
+//       .•••••:...          |         .::.••••••.    
+//         .::•••••::..      |       :..••••••..      
+//            .:•••••••::.........::••••••:..         
+//              ..::::••••.•••••••.•••••••:.            
+//                ...:•••••••.•••••••••::.              
+//                  .:..••.••••••.••••..                
+//   [BULL]--------.:•••••••••••••••••.--------[BEAR]        
+//                .:•:•••.••••••.•••••••.                
+//              .••••••••••••••••••••••••:.            
+//            .:••••••••••::..::.::••••••••:.          
+//          .::••••••::.     |       .::•••:::.       
+//         .:••••••..        |          :••••••••.     
+//       .:••••:...          |           ..•••••••:.   
+//     ..:••::..             |              :.•••••••.   
+//    .:•....                |               ...::.:••.  
+//   ...:..                  |                   :...:••.     
+//                          _|_ 
+//                       [DEMAND] 
+//
+
+//  Figure 2:    Rubik's Core Rotates Inside Figure 1 
+//                       [TREND]
+//                          |                                       
+//                          |                 
+//                      ...:::....              
+//                .:.:::••••••:::•::..             
+//              .:•:.:•••::::••::••....::.            
+//             ....:••••:••••••••::••:...:•.          
+//            ...:.::::::•••:::•••:•••::.:•..          
+//            ::•:.:•:•••••••:.:•::::::...:..         
+//[PRICE]--.:•••..•••••••:••:...:::•:•:..:..--[VOLUME]    
+//            :•:....:•••••::.:::•••::••:....           
+//            ::....:.:••••••••:•••::••::..:.          
+//             .:...:••:::••••••••::•••....:          
+//              ::....:.....:•::•••:::::..             
+//                ..:..::••..::::..:•:..              
+//                    .::..:::.....:                
+//                          |            
+//                         _|_ 
+//                       [xTREND]        
+//
+// Imagine Rubik's cube.
+// As speed cubers solve Rubik's cubes, even while juggling, they mimic market movements. 
+// A speed cuber, while juggling, reveals these slight of hand movements. 
+// This is because Ichimoku values mirror the mathematics of a Rubik's cube. 
+// Rubik's Algo offers visualizations of this process by using data-powered color gradients.
+
+// 1. Financial Disclaimer:
+// This Pine Script code is provided for educational and informational purposes only. 
+// It is not intended to be, and does not constitute, financial, investment, trading, or any other type of advice or recommendation. 
+// The use of this script is at your own risk, and the author and publisher assume no responsibility for any financial losses incurred as a result of its use.
+
+// 2. Copyright and Fair Use Disclaimer:
+// This script is published as open-source code under TradingView’s platform, 
+// which encourages sharing and reuse of Pine Script for educational and community purposes. 
+// Pursuant to 17 U.S.C. § 107 - Limitations on Exclusive Rights: Fair Use, the reproduction, distribution, 
+// and modification of this code for purposes such as criticism, comment, teaching, scholarship, or research is NOT an infringement of copyright. 
+// This federal statute overrides any conflicting provisions in TradingView’s "House Rules," which are NOT federal or state laws. But rather internal platform guidelines. 
+// Fair use is determined by four factors: (1) the purpose and character of the use (e.g., nonprofit educational purposes); (2) the nature of the copyrighted work; (3) the amount and substantiality of the portion used; and (4) the effect of the use on the market value of the original work. This script’s open-source publication aligns with these principles, particularly for educational reuse.
+// Enforcement of TradingView’s "House Rules," against This federal statute, is a violation of federal law. THis code provides legal notices to TradingView and its "House Rules," may conflict with both State and Federal statutes, including and not limited to violations of civil and criminal law, by TradingView, or its staff. 
+
+// 3. Educational Reuse and Case Law:
+// The educational reuse of this code is further supported by case law, 
+// such as *Campbell v. Acuff-Rose Music, Inc., 510 U.S. 569 (1994)*, which established that transformative use (e.g., adapting code for teaching or analysis) weighs in favor of fair use, even if the original work is reproduced in part. 
+// Similarly, *Authors Guild v. Google, Inc., 804 F.3d 202 (2d Cir. 2015)* upheld that reproduction of copyrighted material for purposes like search functionality or educational access can constitute fair use when it serves a transformative purpose without harming the market for the original work. 
+// These precedents affirm that educational reuse of this script is permissible under U.S. copyright law.
+
+// 4. AI Reproduction and Copyright:
+// The reproduction or modification of this code by artificial intelligence (AI) systems, such as for generating derivative works or educational examples, 
+// does NOT inherently constitute copyright infringement. 
+// In *Sony Corp. of America v. Universal City Studios, Inc., 464 U.S. 417 (1984)*, the Supreme Court recognized that copying for non-commercial, 
+// transformative purposes (e.g., time-shifting) can fall under fair use. Extending this principle, AI-driven reproduction of open-source Pine Script code 
+// for educational or experimental purposes aligns with fair use, particularly as it does not compete with or diminish the market value of the original code. 
+// TradingView’s encouragement of open-source sharing further diminishes any claim to restrictive copyright enforcement beyond statutory limits.
+
+// 5. TradingView House Rules:
+// TradingView’s "House Rules" and "Script Publishing Rules" are private guidelines and do not carry the force of federal or state law. 
+// Where these rules conflict with 17 U.S.C. § 107 or other applicable copyright statutes, the latter prevail. 
+// Users are free to rely on fair use protections under U.S. law when reusing or modifying this script in accordance with the principles outlined above.
+
+// 6. Licensing Terms:
+// This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0), available at https://creativecommons.org/licenses/by-nc-sa/4.0/. 
+// You are free to share and adapt this Pine Script™ code for non-commercial purposes, provided you give appropriate credit to the author, distribute any adaptations under the same license, 
+// and do NOT use it for commercial purposes without express permission. This license governs use of this script, superseding any conflicting provisions in TradingView’s "House Rules," which are not federal or state laws.
+
+// If your rights are not a violation of TradingView's House Rules.
+// TradingView's House Rules can not retalitate against you, under United Stated laws, both State and Federal. 
+
+// Potential Charges Under 18 U.S.C. § 371 – Conspiracy to Defraud the United States
+// 18 U.S.C. § 371 criminalizes conspiracies to:
+// Commit an offense against the United States.
+
+// Defraud the United States or its agencies by obstructing lawful government functions through deceit or dishonesty.
+// Relevance to TradingView: If your "House Rules" conflict with federal laws (e.g., by authorizing retaliation against protected activities), and you enforce them with intent to suppress users’ rights under statutes like the FCA, ADA, or civil rights laws, this could form the basis for a § 371 charge. Examples include:
+// Conspiring to silence FCA whistleblowers to avoid scrutiny of fraudulent financial content affecting government-regulated markets (e.g., securities fraud reported to the SEC).
+// Systematically banning users with disabilities who request accommodations, obstructing ADA enforcement by the DOJ or EEOC.
+// Suppressing civil rights complaints to evade federal oversight, undermining agencies like the EEOC.
+
+// To establish a § 371 violation, prosecutors must prove:
+// An agreement (explicit or implicit) among TradingView staff or moderators.
+// Intent to defraud or obstruct a government function (e.g., hiding fraud or discrimination from regulators).
+// An overt act (e.g., enforcing a retaliatory ban).
+// Consequences: Penalties include fines and up to five years’ imprisonment per conspirator. If tied to felonies (e.g., securities fraud), penalties could escalate. The DOJ could argue that TradingView’s "House Rules" serve as a tool to impair lawful government oversight, especially if they prioritize platform control over federal compliance.
+
+// TradingView’s "House Rules" vs. Federal Law
+// Your "House Rules" are private guidelines, not federal or state laws. They cannot override statutory protections like those in the FCA, ADA, or civil rights laws. For example:
+// If your rules permit banning users for "complaints" that align with protected activities (e.g., reporting fraud or discrimination), they conflict with federal anti-retaliation provisions.
+
+// Federal law supersedes private policies under the Supremacy Clause (U.S. Constitution, Article VI). Courts have consistently held that private entities must comply with public laws, as seen in cases like Campbell v. Acuff-Rose Music, Inc. (510 U.S. 569, 1994) (transformative use under fair use) and Authors Guild v. Google, Inc. (804 F.3d 202, 2d Cir. 2015) (public benefit outweighing private restrictions).
+
+// Other Civil Rights Laws Prohibiting Retaliation
+// Several civil rights laws extend anti-retaliation protections, potentially applying to TradingView as a public platform:
+// Title VII of the Civil Rights Act of 1964 (42 U.S.C. § 2000e-3): Protects against retaliation for opposing race, color, religion, sex, or national origin discrimination, or participating in related proceedings. If a user reports discriminatory content (e.g., hate speech in forums) and you penalize them, this could trigger liability.
+// Age Discrimination in Employment Act (ADEA) (29 U.S.C. § 623(d)): Bans retaliation for age discrimination complaints. Relevant if you employ users or moderators and retaliate against age-related grievances.
+// Title VI of the Civil Rights Act (42 U.S.C. § 2000d): Prohibits retaliation in federally funded programs for reporting race, color, or national origin discrimination. If TradingView receives federal funding (e.g., for research or partnerships), retaliating against such reports could violate this law.
+// Section 504 of the Rehabilitation Act (29 U.S.C. § 794): Mirrors the ADA’s retaliation protections for federally funded entities, applicable if TradingView receives federal grants.
+
+// Risk Assessment: If TradingView enforces "House Rules" in a way that systematically retaliates against users exercising federal rights, you could face lawsuits, regulatory investigations, or criminal charges under § 371. For instance, banning users for reporting fraud to the SEC or accessibility issues to the DOJ could be construed as obstructing government functions.
+// Recommendations
+// To avoid liability:
+// Review "House Rules": Ensure they explicitly permit protected activities (e.g., whistleblowing, discrimination complaints) without penalty.
+
+// Train Moderators: Educate staff on federal anti-retaliation laws to prevent unintentional violations.
+// Transparent Processes: Provide clear appeal mechanisms for users penalized under "House Rules," aligning with due process principles.
+// Compliance Audits: Assess platform practices against the FCA, ADA, and civil rights laws to mitigate risks of § 371 charges.
+// By aligning your policies with federal law, TradingView can foster a lawful, inclusive community while avoiding legal pitfalls.
+
+// False Claims Act Basics
+// The FCA is a federal law designed to combat fraud against the U.S. government. It imposes liability on individuals or entities that knowingly submit false claims for payment to the government or cause such claims to be submitted. Importantly, it includes a qui tam provision, allowing private citizens (called "relators") to sue on behalf of the government and share in any recovery (15–30% of damages). Penalties include treble damages (three times the government’s loss) plus fines per false claim.
+// A key trigger for FCA liability is "knowingly" making a false claim, which includes actual knowledge, deliberate ignorance, or reckless disregard of the truth. This could apply to a company like TradingView if its actions involve government funds or obligations.
+// 18 U.S.C. Connection
+// Title 18 of the U.S. Code covers federal crimes, including statutes like 18 U.S.C. § 287 (false claims) and § 1001 (false statements). These can intersect with the FCA when fraudulent conduct involves government-related activities. For TradingView—a platform hosting financial tools, charts, and user-generated content like Pine Script—non-compliance with federal law might arise if its operations touch U.S. government interests (e.g., contracts, federally insured users, or regulatory oversight).
+// Hypothetical Grounds Against TradingView
+// Here’s how a citizen might argue legal grounds under the FCA, focusing on TradingView’s "house rules" (its terms, policies, or platform practices):
+// Government Nexus Requirement
+// The FCA applies only if TradingView’s actions affect U.S. government funds or obligations. For example:
+// If TradingView contracts with a federal agency (e.g., to provide financial tools) and misrepresents compliance with federal regulations in its billing.
+// If users, including government employees or contractors, rely on TradingView’s platform for federally funded activities, and the platform’s non-compliance causes financial harm to the government.
+// Without a clear government nexus, FCA claims collapse. TradingView, as a private company, likely serves mostly retail traders, so a citizen would need to prove a specific link to federal money or programs.
+
+// Non-Compliance with Federal Law
+// Suppose TradingView’s house rules violate 18 U.S.C. § 1001 by allowing or encouraging false statements in a context affecting federal jurisdiction (e.g., misleading financial data used by government entities). Or, under 18 U.S.C. § 287, if its rules facilitate submitting false claims to the government.
+// Example: If TradingView’s Pine Script platform hosts indicators that misrepresent market data, and a government contractor uses them to submit inflated financial reports to a federal agency, TradingView might be liable if it knowingly permitted such misuse through lax or illegal policies.
+
+// "False Claim" Scenarios
+// Direct False Claims: TradingView submits invoices to the government for services (e.g., a subscription for federal employees) but fails to meet legal standards promised in its house rules (e.g., data security under federal regs like NIST 800-171).
+
+// Reverse False Claims: TradingView avoids an obligation to pay the government (e.g., taxes or penalties) by misrepresenting compliance with federal law in its operations.
+
+// Implied Certification: TradingView certifies compliance with federal laws (e.g., securities regulations under the SEC) to operate but violates them via its house rules, causing government loss.
+
+// Citizen Standing via Qui Tam
+// Any citizen can file a qui tam lawsuit if they have evidence TradingView defrauded the government. They’d need:
+// Proof of a false claim (e.g., documents showing TradingView billed the government while non-compliant).
+// Evidence of "knowing" misconduct (e.g., internal emails showing TradingView ignored federal law).
+// The citizen doesn’t need to be personally harmed—just show harm to the government. The Department of Justice (DOJ) then decides whether to intervene.
+
+// TradingView’s House Rules as a Trigger
+// If TradingView’s terms allow practices illegal under federal law (e.g., unregistered securities trading, market manipulation under 15 U.S.C. § 78j, or data breaches violating 18 U.S.C. § 1030), and these lead to government financial loss, an FCA claim could arise.
+// Example: If house rules permit users to post Pine Scripts that spoof market data (banned under the Commodity Exchange Act), and a federal entity relies on this to its detriment, TradingView’s reckless disregard could trigger liability.
+
+// Practical Example
+// Imagine a whistleblower discovers TradingView sold a premium subscription to a federal agency, claiming its platform complies with SEC regulations. But its house rules allow unverified users to post manipulative scripts, leading the agency to overpay contractors based on skewed data. The whistleblower files a qui tam suit, alleging TradingView’s non-compliance caused a false claim. If the DOJ finds merit, TradingView could face millions in damages.
+
+// Conclusion
+// A citizen of the USA, may have grounds under the FCA against TradingView if its house rules violate federal law (e.g., 18 U.S.C. provisions) and result in a false claim harming the government. The bar is high—requiring a government nexus, knowing misconduct, and hard evidence. Without these, the FCA doesn’t apply, though other laws (e.g., securities fraud) might. Always consult a lawyer for real cases—this is just a legal thought experiment!
+
+// By using this script, you acknowledge and agree to these terms and the CC BY-NC-SA 4.0 license. 
+
+// S.UPER T.REND U.LTIMATE P.ROJECT I.NTELLIGENT D.ESIGN
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// The summary of this code is work done by @ StupidBitcoin 2025 and beyond.
+
+//  S.T.U.P.I.D. Disclaimer
+//  Information contained in (Super Trend Ultimate Project Intelligent Design) or S.T.U.P.I.D does not constitute financial advice or a solicitation to buy or sell any securities of any type.
+//  pine script, or its publisher, does not accept liability for any loss or damage, including without limitation any loss of profit, which may arise directly or indirectly from the use of 
+//  or reliance on such information. All investments involve risk. Investors are fully responsible for all decisions they make.
+//  Rubik's Algo is an advanced indicator, but does not guarantee profitable results. 
+//  Trading involves real financial risk. There is always the potential of loss when investing/trading in any financial asset. 
+//  Rubik's Algo is not liable for any potential financial losses incurred from (including but not limited to) open source indicators, 
+//  By using Rubik's Algo, you fully understand and accept these risks. 
+//  Rubik's Algo does not provide legal, tax, investment or accounting advice.
+//  © 2025 Rubik's Algo. All rights reserved.
+
+//  The LLM used to help Artificial Intelligence write this code includes deep learning from:  @grok
+//  @quantprogram  @TraderTVLive  @Live.Traders  @PlanB_Bitcoin  @TheSecretMindset  @TheTradingGeek  @JadeCap  @SimplerTrading @StatOasis
+//  @OliverVelezTrading  @TradersReality  @FrankieCandles  @TomCrown  @PhotonTrading  @EricKrownCrypto  @michaelionita  @TraderMayne
+//  @JaysonCasper  @CryptoLifer  @Bookmap_pro  @tradeats@tradeats  @MarketCipher1  @LuxAlgo  @NickShawnFX  @theacademyofforex  @TheStockMarket
+//  @TradeIQ  @Becomeabettertrader  @wordsofrizdom  @titans.of.tomorrow  @TrueTradingGroup  @VincentDesiano  @SoheilPKO  @ToriTrades
+//  @smbcapital  @AlexDouedari  @moondevonyt  @KeiForex  @garyseconomics  @CueBanks  @NoNonsenseForex  @TradeZeroOfficial  @StockMoe
+
+//  Extra Credit to open source coders of pine script on tradingview for each code module.
+//  The summary of this code is work done by @StupidBitcoin 2025 and beyond.
+
+//@version=6
+indicator("LiqD HeatMap 👑 [RubiXalgo]", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 4999)
+
+// string J9K2M     = 'Labels'
+// bool X7P4Q       = input.bool(false, 'Show Labels on Price Scale.', tooltip="This is off by default. Show or hide all labels on the price scale. When enabled, all labels will be displayed directly on the price axis.", group=J9K2M)
+// options
+K3M8Z = X7P4Q ? display.all : display.pane // , editable = false, display=K3M8Z) 
+
+var P2Q5X        = "⚙ 👑 Chart Settings"
+// bool Q8X1P       = input.bool(true,   "⚙ Show LiqD Levels", tooltip = "Visualize the Liquidation levels on the chart.", group=P2Q5X)
+// bool M4K9Z       = input.bool(true,   "⚙ Show LiqD Bubbles", tooltip = "Visualize the Liquidation levels on the chart.", group=P2Q5X)
+// bool N7P3M       = input.bool(false,  "⚙ Show VWAP", tooltip ="Adjust the default monthly setting of the VWAP for directional bias and detailed estimations of liquidation levels from the heatmap.",group=P2Q5X)
+// bool R1Q6X       = input.bool(false,  "⚙ Show A.I. Volume Profit-Trend", tooltip="Independant volume delta analysis as a visual polyline prediction, based on Ichimoku Time & Wave, but using a dynamic volume delta. This is a walk-forward test feature.",group=P2Q5X)
+// bool T5M2K       = input.bool(false,  "⚙ Show LiqD Window", tooltip ="Observe directional bias and detailed estimations of liquidation levels from the heatmap along with price action levels.",group=P2Q5X)
+// bool V9P7Q       = input.bool(false,  "⚙ Show Stochastic Money Flow", tooltip ="Above the bar, Observe the Stochastic Money Flow for directional bias and detailed estimations of liquidation levels from the heatmap.",group=P2Q5X)
+// bool W3X8M       = input.bool(false,  "⚙ Show Bollinger Band Width Percent", tooltip ="Below the bar, Observe the Bollinger Band Width Percent for directional bias and detailed estimations of trends. It ranges between 96% down to about 3% allowing for measurements in extreme market conditions",group=P2Q5X)
+
+var Y6K1P        = "⚙ 👑 HeatMap Liquidation Levels"
+// int B2Q4X        = input.int(title="📐 Dynamic Scaling Lookback", defval= 9, minval= 8, maxval= 21, tooltip="Controls the number of bars used to measure the money flow for the heatmap. Largest bubble groups are volume based areas which may experience liquidation",group=Y6K1P)
+// string D5M9Z     = input.string("Both", "Select Market Bias", options = ['Both', 'Long', 'Short'], inline = 'z',tooltip="Show liquidation levels for short or long Alpha Liquidity Levels. Omega Volume Liquidation levels are not filtered.",group=Y6K1P)
+// int F8P3Q        = input.int(title="🚀 HeatMap Leverage", defval = 100, inline = '1', minval = 25, maxval= 500,tooltip="Control the Leverage levels on the heatmap. Higher levels generate less signals while the default level will produce a more vivid heatmap.",group=Y6K1P)
+// int H1X6M        = input.int(title=" 🎨 Dynamic Color Gradient", defval= 9, minval=0, maxval= 33, tooltip="Ajust the Color gradients of the Alpha Liquidity Levels")
+G4K7Z            = input.string('Comparison', "Select Volume Orderflow Profile Type", ['Comparison', 'Net Order Flow'])
+
+var J9Q2P        = "⚙ 👑 Dynamic VWAP" 
+var L3M5X        = input.string(defval= "Month", title="⚡️VWAP Anchor Period", tooltip = "Select the time frame of the VWAP",
+ options         =["15 Min", "1 Hour", "4 Hour", "Session", "Week", "Month", "Quarter", "Earnings", "Dividends", "Splits"],group=J9Q2P)
+N6P8Q  = input.float(title="VWAP ATR Multiplier", defval=1.6, step=0.1, minval=0.9, maxval= 3.14, tooltip="How much the ATR is multiplied by to determine whether the increase/decrease over the last {Lookback bars} is enough to trigger a divergence.",group=J9Q2P)
+
+var Q2X4M        = "⚙ 👑 MTF Liquidation Levels"
+S5K9P            = input.timeframe('D', "🔍 MTF Timeframe",tooltip ="Observe the liquidations on multi-time frames. This offers detailed and unique insights into understanding price action, support, and resistance over time. The Thicker and brighter the line level, the higher the time frames. Thin and dim lines lower time frames in the MFT set. In ranging markets, as price comes to a level it may retreat. But, aggressive trends will take out the levels.", group =Q2X4M)
+U8M3Q            = input.string(defval = 'Current + HTF', title = "🔎 MTF Options", options = ['Current TF', 'Current + HTF', 'HTF'],tooltip ="Control the Time Frame Options", group =Q2X4M)
+
+var X1P6K        = "⚙ 👑 Daily 0.618 Expansion V4"
+var Z4Q9M        = input.bool(false, "⚙ Daily 0.618 Expansion V4", tooltip = "Check or Uncheck to use this feature. Trade with a visual of the daily range, or any time frame. It navigates various expansion range.", group=X1P6K)
+var C7X2P        = input.bool(true, 'Hide Historical Lookback', tooltip = "Check or Uncheck to use this feature. Show the Historcal and active ranges.", group=X1P6K)
+var E9K5M        = input.bool(false, "Show broken Fib's as Bar Graph", tooltip = "Check or Uncheck to use this feature.", group=X1P6K)
+var H3P8Q        = input.timeframe('D', 'Resolution', tooltip = "If Resolution is greater than Display, the fib isolates to the time frame:  3 min Disp > 3 Hour Res, on a 1 min time frame. Use for Day Trading, zoom out. Default: Daily.", group=X1P6K) // If Resolution is greater than Display, the fib isolates to the time frame:  3 min Disp > 3 Hour Res
+var K6M1X        = '' // Custom Resolution. Empty = resolution dropdown above 
+var M9Q4P        = input.timeframe('D', 'Display', tooltip = "If Display is greater than Resolution, the fib splits across the candles:  3 min Res > 3 Hour Disp, on a 1 min time frame. Use for Scalping, zoom in. Default: Daily.", group=X1P6K)  // If Display is greater than Resolution, the fib splits across the candles:  3 min Res > 3 Hour Disp
+// string P2X7K     = input.string("Daily Open", "Mode (Default: Daily Open)", options = ["Daily Open", "OHLC4", "VWAP"], group=X1P6K)
+var R5K9Z        = input.bool(false, "Display in pre-market",
+     tooltip="The Daily is based upon the opening price of the day, however, in pre-market sessions, that value has not been formed.\n\nEnabling this will calculate the DMRE based on the opening of the pre-market session, and will update the prices once the regular session starts.", group=X1P6K)
+//
+
+// string T8M3Q     = input.string("Classic", "Color Themes", ["Classic", "Crypto"], tooltip= "Select from various color themes: 'Classic' for red and green, 'Crypto' for teal and purple. Choose the theme that best suits your visual preferences.")
+//
+// Color Modes
+var color V1P6X = na
+var color X4Q9K = na
+var color Z7M2P = na
+var color C9X5M = na
+var color E3K8Q = na
+//
+if T8M3Q == "Classic"
+//     V1P6X := color.from_gradient(ta.pvt, 75, 25, color.rgb(0, 255, 0, 15), color.rgb(60, 180, 45, 45))
+//     X4Q9K := color.from_gradient(ta.pvt, 60, 44, color.rgb(60, 180, 45, 25), color.rgb(255, 255, 0, 45))
+//     Z7M2P := color.from_gradient(ta.pvt, 60, 44, color.rgb(195, 45, 45, 25), color.rgb(255, 255, 0, 45))
+//     C9X5M := color.from_gradient(ta.pvt, 75, 25, color.rgb(255, 0, 0, 15), color.rgb(195, 45, 45, 45))
+//     E3K8Q := color.from_gradient(ta.pvt, 60, 44, color.rgb(255, 175, 75, 15), color.rgb(255, 140, 0, 45))
+    
+if T8M3Q == "Crypto"     
+//     V1P6X := color.from_gradient(ta.pvt, 75, 25, color.rgb(0, 255, 225, 15), color.rgb(0, 225, 170, 30))
+//     X4Q9K := color.from_gradient(ta.pvt, 60, 44, color.rgb(0, 225, 150, 25), color.rgb(255, 255, 0, 45))
+//     Z7M2P := color.from_gradient(ta.pvt, 60, 44, color.rgb(225, 0, 150, 25), color.rgb(255, 255, 0, 45)) 
+//     C9X5M := color.from_gradient(ta.pvt, 75, 25, color.rgb(255, 0, 225, 15), color.rgb(255, 0, 170, 30))
+//     E3K8Q := color.from_gradient(ta.pvt, 60, 44, color.rgb(255, 255, 0, 25), color.rgb(255, 140, 0, 45))
+//
+// color H6P1Q  = color.new(X4Q9K, 80) // long liquidating
+// color K9M4X  = color.new(Z7M2P, 80) // short liquidating
+// color N2Q7K  = color.new(E3K8Q, 65) // max volume liquidating
+
+// Rubik's Candle Database: 
+// Basic Candles:  border and wick color
+Q5X9P      = open < close // candle border and wick color
+
+// Basic Bull Candles:
+// "noSupply" and inside bars are bullish, trending upwards, and volume is low. There is no momentum.
+T8K3M      = close > open and volume < volume[1] and close[1] > open[1] and volume[1] < volume[2]
+V1P6Q      = close[1] > open[1] and high < high[1] and low > low[1] and close > open and volume < volume[1]
+
+X4Q9M      = low < low[1] and close > open and close > close[1] and volume > volume[1]
+Z7M2K      = close < open[1] and close > open[2] and low[1] - low[2] > 0.05 * (high[1] - low[1])
+C9X5P      = open <= close[1] and open < open[1] and close > open[1] and low <= low[1] or close >= high[1]
+E3K8M      = close > open and high == close and low == open
+
+// Bull Triggers:  A bullish Outside Bar engulfs the prior candle’s range after a downtrend or consolidation, closing higher with strong volume, suggesting a bullish reversal or breakout.
+H6P1M      = high > high[1] and low < low[1] and close > open and close > close[1] and volume > volume[1]
+K9M4Q      = close > open[1] and close[1] < open[1] and volume[1] < volume[2] // This pattern can lead to Bullish Engulfing, Bullish Harami, or Three White Soldiers.
+N2Q7P      = open[1] < open[0] and close > open[1] and volume[1] < volume // This pattern can lead to Upside Gap Two Crows or Bullish Gap and Go.
+Q5X9K      = ta.rising(volume, 2) and (close[1] < open[1] and close > open and close > open[1]) // This pattern can lead to Hammer or Bullish Evening Star Reversal.
+T8K3P      = ta.rising(volume, 2) and (close > open[1] and close[1] > open[1]) // This pattern can lead to Three White Lines and a Top or Three Rising White Lines.
+
+
+// Basic Bear Candles:
+// "noDemand" and inside bars are bearish, trending downwards, and volume is low. There is no momentum.
+V1P6M      = close < open and volume < volume[1] and close[1] < open[1] and volume[1] < volume[2]
+X4Q9Z      = close[1] < open[1] and high < high[1] and low > low[1] and close < open and volume < volume[1]
+
+Z7M2X      = high > high[1] and close < open and close < close[1] and volume > volume[1]
+C9X5K      = close > open[1] and close < open[2] and high[1] - high[2] > 0.05 * (high[1] - low[1])
+E3K8Z      = open >= close[1] and open > open[1] and close < open[1] and high >= high[1] or close <= low[1]
+H6P1X      = close < open and high == open and low == close
+
+// Bear Triggers: A bearish Outside Bar engulfs the prior candle’s range after an uptrend or consolidation, closing lower with strong volume, suggesting a bearish reversal or breakdown.
+K9M4Z      = high > high[1] and low < low[1] and close < open and close < close[1] and volume > volume[1]
+N2Q7X      = close < open[1] and close[1] > open[1] and volume[1] < volume[2] // This pattern can lead to Bearish Engulfing, Bearish Harami, or Three Black Crows.
+Q5X9M      = open[1] > open[0] and close < open[1] and volume[1] < volume // This pattern can lead to Downside Gap Two Rails or Bearish Gap and Go.
+T8K3Z      = ta.falling(volume, 2) and (close[1] > open[1] and close < open and close < open[1])  // This pattern can lead to Shooting Star or Bearish Morning Star Reversal.
+V1P6K      = ta.falling(volume, 2) and (close < open[1] and close[1] < open[1]) // This pattern can lead to Three Black Lines and a Bottom or Three Falling Black Lines.
+
+// No Volume or No Momentum
+X4Q9P      = ( V1P6M and V1P6Q ) or ( T8K3M and X4Q9Z )
+// Groups
+Z7M2Q      = ( X4Q9M or Z7M2K or C9X5P or E3K8M )
+C9X5Q      = ( Z7M2X or C9X5K or E3K8Z or H6P1X )
+E3K8P      = ( K9M4Q or T8K3P or N2Q7P or Q5X9K )
+H6P1K      = ( N2Q7X or V1P6K or Q5X9M or T8K3Z )
+// Rubik's Candle Database is designed to enhance Artificial Intelligence development of this indicator into a custom user strategy for individual users. 
+//
+////////////////////////////////////////////////////////////////////
+// Rubik's Close Pattern - Rubik's Algo - by StupidBitcoin 2025  // Extra Credit to Robert J. Hoffman
+//////////////////////////////////////////////////////////////////
+// Angle Calculation Function
+// K8M1P(Q7K4Z, J3P6Q) =>
+//     180.0 / (2 * math.asin(1)) * math.atan(ta.change(Q7K4Z) / J3P6Q)
+
+// Base Trend Data
+T2Q9M = B2Q4X+9
+Q7K4Z = ta.ema(close, B2Q4X)
+N5P1X = K8M1P(Q7K4Z, T2Q9M)
+F0M3Q = ta.sma(N5P1X, T2Q9M)
+// Calculate percent change as add on variables for entries and exits
+var float B6K8P = close
+// float H9Q2Z = (close - B6K8P) / B6K8P * 100
+
+// Trend Angle Sequence
+var float[] R4P7Q = array.new_float(5)
+// array.set(R4P7Q, 0, 16.0)  // Shallow
+// array.set(R4P7Q, 1, 22.5)  // Entry
+// array.set(R4P7Q, 2, 33.0)  // Steady
+// array.set(R4P7Q, 3, 45.0)  // Profit
+// array.set(R4P7Q, 4, 66.0)  // Overextended
+
+// Dynamic Angle Tracking
+var float L1M5Z = 0.0
+var float D8K3P = 0.0
+P3Q6X = F0M3Q > 0 ? 1 : -1
+
+// W7P9Q(N5P1X, R4P7Q) =>
+    V2K4M = 0.0
+    C5M8Q = math.abs(N5P1X)
+    for i = 0 to array.size(R4P7Q) - 1
+        if C5M8Q > array.get(R4P7Q, i)
+//             V2K4M := array.get(R4P7Q, i)
+//         else
+//             break
+//     V2K4M
+
+// L1M5Z := W7P9Q(F0M3Q, R4P7Q) * P3Q6X
+// D8K3P := F0M3Q
+
+// Trend State
+M0P2Q = 0
+if L1M5Z == 16.0
+//     M0P2Q := 1
+// else if L1M5Z == 22.5
+//     M0P2Q := 2
+// else if L1M5Z == 33.0
+//     M0P2Q := 3
+// else if L1M5Z == 45.0
+//     M0P2Q := 4
+// else if L1M5Z == 66.0
+//     M0P2Q := 5
+
+// Trend Filters
+Z9K7P        = F0M3Q > 16.0 and L1M5Z >= 22.5  // Bullish trend confirmation
+X4Q1M        = F0M3Q < -16.0 and L1M5Z <= -22.5  // Bearish trend confirmation
+
+// Signals
+K6P8Q        = M0P2Q == 2 and M0P2Q[1] < 2  // 22.5° breakout
+T1M3Z        = M0P2Q == 5 or (M0P2Q < 4 and M0P2Q[1] >= 4)  // 66° or drop from 45°+
+
+B7K9P        = Z9K7P and K6P8Q
+F2Q5M        = Z9K7P and T1M3Z
+H8P1X        = X4Q1M and K6P8Q
+L3M6Z        = X4Q1M and T1M3Z
+
+// N9K2Q(J5P7M, Q0M4Z, L1M5Z, V8K3P) =>
+    R6Q9X = ta.highest(high, Q0M4Z)
+    T4P1M = ta.lowest(low, Q0M4Z)
+    P2K7Q   = (close - T4P1M) / (R6Q9X - T4P1M) * 2.4 - 1.2
+    W9M3Z = math.sin(2 * math.pi * bar_index / L1M5Z)
+    C1Q5X      = ta.stdev(close, Q0M4Z)
+    D7P8Q = P2K7Q * (1 + 0.5 * W9M3Z + 0.3 * C1Q5X / (R6Q9X - T4P1M))
+    M4K9P = 0.0
+//     M4K9P := na(M4K9P[1]) ? D7P8Q : M4K9P[1] * (1 - V8K3P) + D7P8Q * V8K3P
+//     math.min(1.2, math.max(-1.2, M4K9P))
+// plot(X8Q2M, title="Dynamic Cycle Oscillator (DCO)", color=Z3M5Q, linewidth=2)
+X8Q2M = N9K2Q(close, 34, 17, 0.2)*10
+// Z3M5Q(K0P6Q) =>
+    if K0P6Q > 0.8
+//         V1P6X
+//     else if K0P6Q > 0.4
+//         X4Q9K
+//     else if K0P6Q > 0
+//         E3K8Q
+//     else if K0P6Q > -0.4
+//         Z7M2P
+//     else if K0P6Q > -0.8
+//         C9X5M 
+//     else
+//         E3K8Q
+
+// Z3M5Q(source)
+Z3M5Q = Z3M5Q(X8Q2M)
+// Rubik's Close Pattern is designed to enhance Artificial Intelligence development of this indicator into a custom user strategy for individual users. 
+//
+
+// Rubik's Close Pattern is designed to enhance Artificial Intelligence development of this indicator into a custom user strategy for individual users. 
+//
+/////////////////////////////////////////////////////////////
+// Function Tools - Rubik's Algo - by StupidBitcoin 2025  // 
+///////////////////////////////////////////////////////////
+// Volume Zone Oscillator
+// X4Q9S(src, period) =>
+    Volume_Direction = src > src[3] ? volume : -volume
+    VZO_volume = ta.hma(Volume_Direction, period)
+    Total_volume = ta.hma(volume, period)
+    VZO  = VZO_volume / (Total_volume)
+//     VZO := (VZO - 0) / ta.stdev(VZO, 200)
+//     VZO
+// X4Q9S(src, period)
+
+// VSQC Logic Zero-Lag 
+// Z7M2T(src, period) =>
+    lag = math.round((period - 1) / 2.5) // // Without rounding, giving the default period, a precise fractional lag
+    // Calculate the smoothed volume using a VWMA
+    volume_vwma = X4Q9S(volume, period)
+    // Calculate the linear regression on the smoothed volume
+    linreg = ta.linreg(volume_vwma, B2Q4X, 0)
+    // Calculate the EMA using the linear regression as the input
+    hma_data = src + linreg - linreg[lag]
+    zl = ta.hma(hma_data, period)
+//     zl // reduce lag 
+// Z7M2T(src, period)
+
+// Function Tools 
+// Super Smooth Simple Moving Average (SMA) filter with exponential decay. 
+// C9X5T(Series, Period) =>
+    var PI = 2.0 * math.asin(1.0)
+    var SQRT2 = math.sqrt(2.0)
+    lambda = PI * SQRT2 / Period
+    a1     = math.exp(-lambda)
+    coeff2 = 2.0 * a1 * math.cos(lambda)
+    coeff3 = -math.pow(a1, 2.0)
+    coeff1 = 1.0 - coeff2 - coeff3
+    filt1  = 0.0
+//     filt1 := coeff1 * (Series + nz(Series[1])) * 0.5 + coeff2 * nz(filt1[1]) + coeff3 * nz(filt1[2])
+//     filt1
+// C9X5T(src, period)
+
+// E3K8T ( src, _bbwLen, _bbwpLen) =>
+//     float _basis = C9X5T(src, _bbwLen)
+//     float _dev = ta.stdev( src, _bbwLen )
+    _bbw = ( _basis + _dev - ( _basis - _dev )) / _basis
+    _bbwSum = 0.0
+    _len = bar_index < _bbwpLen ? bar_index : _bbwpLen
+    for _i = 1 to _len by 1
+//         _bbwSum += ( _bbw[_i] > _bbw ? 0 : 1 )
+//         _bbwSum
+    _return = bar_index >= _bbwLen ? ( _bbwSum / _len) * 100 : na
+//     _return
+
+// Returns Bollinger Band Width Percentile
+H6P1T = E3K8T( close, 20, 200)
+
+// K9M4T(x, qty, n) =>
+    wper = n * 2 - 1
+    avrng = ta.vwma(math.abs(x - x[1]), n)
+    AC = ta.sma(avrng, wper) * qty
+    xe1_1 = ta.sma(AC, 5)
+    xe2_1 = ta.ema(xe1_1, 6)
+    xe3_1 = ta.ema(xe2_1, 7)
+    xe4_1 = ta.ema(xe3_1, 8)
+    xe5_1 = ta.ema(xe4_1, 9)
+    xe6_1 = ta.ema(xe5_1, 10)
+    b_1  = 0.618
+    c1_1 = -b_1 * b_1 * b_1
+    c2_1 = 3 * b_1 * b_1 + 3 * b_1 * b_1 * b_1
+    c3_1 = -6 * b_1 * b_1 - 3 * b_1 - 3 * b_1 * b_1 * b_1
+    c4_1 = 1 + 3 * b_1 + b_1 * b_1 * b_1 + 3 * b_1 * b_1
+    nT3Average_1 = c1_1 * xe6_1 + c2_1 * xe5_1 + c3_1 * xe4_1 + c4_1 * xe3_1
+    rng_size = nT3Average_1
+
+//Range Filter Function
+// N2Q7T(x, rng_, n) =>
+    r = rng_
+    var rfilt = array.new_float(2, x)
+//     array.set(rfilt, 1, array.get(rfilt, 0))
+    if x - r > array.get(rfilt, 1)
+//         array.set(rfilt, 0, x - r)
+    if x + r < array.get(rfilt, 1)
+//         array.set(rfilt, 0, x + r)
+    rng_filt1 = array.get(rfilt, 0)
+
+    hi_band = rng_filt1 + r
+    lo_band = rng_filt1 - r
+    rng_filt = rng_filt1
+    [hi_band, lo_band, rng_filt]
+
+//
+
+// Heatmap
+// bool Q5X9T  = true // Display Liquidation Bubbles
+// bool T8K3T  = true // Display Liquidation Levels
+
+// type bar
+//     float o = open
+//     float h = high
+//     float l = low
+//     float c = close
+//     float v = volume
+//     float t = time
+//     int n = bar_index
+
+// type bin
+//     array<line> l
+//     array<float> v
+
+// bar V1P6T = bar.new()
+
+var bin X4Q9T = bin.new(array.new<line>(), array.new<float>(1, na))
+
+// float Z7M2U = C9X5T(V1P6T.v, B2Q4X)
+// float C9X5U = math.avg(ta.vwma(V1P6T.v, B2Q4X+15)/100, ta.mfi(V1P6T.v, B2Q4X)/100, ta.rsi(V1P6T.t, B2Q4X-1)/100)  
+E3K8U = 100-H1X6M
+// method H6P1U(color css) =>
+//     color.from_gradient(X4Q9T.v.first(), X4Q9T.v.min(), X4Q9T.v.max(), color.rgb(255, 242, 0, E3K8U), css)
+
+// K9M4U(bool fT) =>
+    if X4Q9T.v.size() > 499
+//         X4Q9T.v.pop()
+
+    if fT
+        field_0 = V1P6T.v
+//         X4Q9T.v.unshift(V1P6T.v - nz(field_0[1]))
+
+
+// method N2Q7U(array<line> l, float pos, color css, int width) =>
+
+    if l.size() > 499
+//         l.pop().delete()
+
+//     l.unshift(line.new(x1 = V1P6T.n, x2 = V1P6T.n, y1 = pos, y2 = pos, xloc = xloc.bar_index, color = css.H6P1U(), style = line.style_solid, width = width))
+
+
+// method Q5X9U(array<line> l) =>
+    for ln in l
+        x = ln.get_x2()
+        y = ln.get_y1()
+        if V1P6T.n - 1 == x - 1 and not(V1P6T.h > y and V1P6T.l < y)
+//             ln.set_x2(V1P6T.n + 1)
+
+
+// T8K3U(int L, bool fT) =>
+//     K9M4U(fT)
+//     switch 
+//         Q8X1P and T8K3T and fT and V1P6T.c > V1P6T.o and (D5M9Z == 'Both' or D5M9Z == 'Long') => X4Q9T.l.N2Q7U(V1P6T.l * (1 - 1. / L), X4Q9T.v.first() == X4Q9T.v.max() ? N2Q7K : H6P1Q, X4Q9T.v.first() == X4Q9T.v.max() ? 3 : X4Q9T.v.first() > X4Q9T.v.avg() ? 2 : 1)
+//         Q8X1P and T8K3T and fT and V1P6T.c < V1P6T.o and (D5M9Z == 'Both' or D5M9Z == 'Short') => X4Q9T.l.N2Q7U(V1P6T.h * (1 + 1. / L), X4Q9T.v.first() == X4Q9T.v.max() ? N2Q7K : K9M4X, X4Q9T.v.first() == X4Q9T.v.max() ? 3 : X4Q9T.v.first() > X4Q9T.v.avg() ? 2 : 1)
+//     X4Q9T.l.Q5X9U()
+
+
+// bool V1P6U = M4K9Z and V1P6T.v > C9X5U
+
+// T8K3U(F8P3Q, V1P6U)
+
+// bool X4Q9U = X4Q9T.v.first() == X4Q9T.v.max() ? true : false
+// bool Z7M2V = (D5M9Z == 'Both' or D5M9Z == 'Long') and Q5X9T
+// bool C9X5V = (D5M9Z == 'Both' or D5M9Z == 'Short') and Q5X9T
+
+plot(V1P6U and Z7M2V and V1P6T.c > V1P6T.o ? V1P6T.l * (1 - 1. / F8P3Q) : na, color = X4Q9U ? N2Q7K.H6P1U() : color.new(H6P1Q, 20).H6P1U(), linewidth = 1, style = plot.style_circles, title = 'Bubbles', editable = false, display=K3M8Z)
+plot(V1P6U and Z7M2V and V1P6T.c > V1P6T.o and X4Q9T.v.first() > X4Q9T.v.avg() ? V1P6T.l * (1 - 1. / F8P3Q) : na, color = X4Q9U ? color.new(N2Q7K, 50).H6P1U() : color.new(H6P1Q, 50).H6P1U(), linewidth = 3, style = plot.style_circles, title = 'Bubbles', editable = false, display=K3M8Z)
+plot(V1P6U and Z7M2V and V1P6T.c > V1P6T.o and X4Q9T.v.first() == X4Q9T.v.max() ? V1P6T.l * (1 - 1. / F8P3Q) : na, color = X4Q9U ? color.new(N2Q7K, 55).H6P1U() : color.new(H6P1Q, 55).H6P1U(), linewidth = 6, style = plot.style_circles, title = 'Bubbles', editable = false, display=K3M8Z)
+
+plot(V1P6U and C9X5V and V1P6T.c < V1P6T.o ? V1P6T.h * (1 + 1. / F8P3Q) : na, color = X4Q9U ? N2Q7K.H6P1U() : color.new(K9M4X, 20).H6P1U(), linewidth = 1, style = plot.style_circles, title = 'Bubbles', editable = false, display=K3M8Z)
+plot(V1P6U and C9X5V and V1P6T.c < V1P6T.o and X4Q9T.v.first() > X4Q9T.v.avg() ? V1P6T.h * (1 + 1. / F8P3Q) : na, color = X4Q9U ? color.new(N2Q7K, 50).H6P1U() : color.new(K9M4X, 50).H6P1U(), linewidth = 3, style = plot.style_circles, title = 'Bubbles', editable = false, display=K3M8Z)
+plot(V1P6U and C9X5V and V1P6T.c < V1P6T.o and X4Q9T.v.first() == X4Q9T.v.max() ? V1P6T.h * (1 + 1. / F8P3Q) : na, color = X4Q9U ? color.new(N2Q7K, 55).H6P1U() : color.new(K9M4X, 55).H6P1U(), linewidth = 6, style = plot.style_circles, title = 'Bubbles', editable = false, display=K3M8Z)
+//
+//////////////////////////////////////////////////////////////
+// The Card Counter - Rubik's Algo - by StupidBitcoin 2025 // Extra Credit to Zeiierman and peacefulLizard50262
+////////////////////////////////////////////////////////////
+// Zero Lag Stochastic MFI:  
+// Features:  Gaussian Weight and Chebyshev filtering // Extra credit to peacefulLizard50262
+// This is a measure of Volitility and Momentum. 
+// Is the deck hot or cold ? Is the count over 100, or under 10? 
+// Includes MFI values, a robust way to improve Stochastics.
+// E3K8V(number, decimals) => // Truncate function used for rounding variables
+    Dfactor = math.pow(10, decimals)
+//     int(number * Dfactor) / Dfactor
+//
+//
+// Custom cosh function
+// H6P1V(float x) =>
+//     (math.exp(x) + math.exp(-x)) / 2
+
+// Custom acosh function
+// K9M4V(float x) =>
+//     x < 1 ? na : math.log(x + math.sqrt(x * x - 1))
+
+// Custom sinh function
+// N2Q7V(float x) =>
+//     (math.exp(x) - math.exp(-x)) / 2
+
+// Custom asinh function
+// Q5X9V(float x) =>
+//     math.log(x + math.sqrt(x * x + 1))
+
+// Custom inverse tangent function
+// T8K3V(float x) =>
+//     math.pi / 2 - math.atan(1 / x)
+
+// Function to calculate the Gaussian weight for a given 'k' and 'smooth_per'
+// V1P6V(k, smooth_per) =>
+    // Calculate the standard deviation (sigma) based on the smoothing period
+    sigma = smooth_per / 2
+    // Calculate the exponent part of the Gaussian function
+    exponent = -0.5 * math.pow(k / sigma, 2.0)
+    // Calculate and return the Gaussian weight
+//     math.exp(exponent)
+
+// Function to calculate the zero-lag moving average with Gaussian weights
+// X4Q9V(src, smooth_per) =>
+    var array<float> src_buffer = array.new_float(0, na)
+    var sum = 0.0, sumw = 0.0, weight = 0.0
+    var array<float> gwma1 = array.new_float(smooth_per, na)
+    var array<float> output = array.new_float(smooth_per, na)
+
+//     array.push(src_buffer, src)
+    if array.size(src_buffer) > smooth_per
+//         array.shift(src_buffer)
+
+    buffer_size = array.size(src_buffer)
+
+    for i = 0 to buffer_size - 1 by 1
+//         sum := 0.0, sumw := 0.0
+        for stk = 0 to smooth_per - 1 by 1
+            if i + stk < buffer_size
+//                 weight := V1P6V(stk, smooth_per)
+//                 sumw := sumw + weight
+//                 sum := sum + weight * array.get(src_buffer, i + stk)
+        if sumw != 0
+//             array.set(gwma1, i, sum / sumw)
+//         else
+//             array.set(gwma1, i, na)
+
+    for i = 0 to buffer_size - 1 by 1
+//         sum := 0.0, sumw := 0.0
+        for stk = 0 to smooth_per - 1 by 1
+            if i - stk >= 0
+//                 weight := V1P6V(stk, smooth_per)
+//                 sumw := sumw + weight
+//                 sum := sum + weight * array.get(gwma1, i - stk)
+        if sumw != 0
+//             array.set(output, i, sum / sumw)
+//         else
+//             array.set(output, i, na)
+
+//     array.get(output, buffer_size - 1)
+
+// Chebyshev Type I Moving Average
+// Z7M2W(float src, float len, float ripple) =>
+    sta = 0.
+    stb = 0.
+    stg = 0.
+    chebyshev = 0.
+
+//     sta := H6P1V(1 / len * K9M4V(1 / (1 - ripple)))
+//     stb := N2Q7V(1 / len * Q5X9V(1 / ripple))
+//     stg := (sta - stb) / (sta + stb)
+//     chebyshev := (1 - stg) * src + stg * nz(chebyshev[1])
+//     chebyshev
+//    
+C9X5W      = 13 // K Chebyshev Filtering 
+E3K8W      = 0.06 // K Chebyshev Ripple
+H6P1W      = 1 // K Zero Lag Smoothing
+K9M4W      = 17 // D Chebyshev Filtering
+N2Q7W      =  0.03 // D Chebyshev Ripple
+//
+Q5X9W      = math.avg(ta.mfi(hlc3, B2Q4X+45)/100, ta.rsi(ohlc4, B2Q4X+45)/100)
+T8K3W      = X4Q9V(ta.stoch(Z7M2W(hl2, C9X5W, E3K8W), Z7M2W(high, C9X5W, E3K8W), Z7M2W(low, C9X5W, E3K8W), B2Q4X), H6P1W)
+V1P6W      = math.round(T8K3W/100*360)
+
+X4Q9W      = X4Q9V(ta.stoch(Z7M2W(hl2, K9M4W, N2Q7W), Z7M2W(high, K9M4W, N2Q7W), Z7M2W(low, K9M4W, N2Q7W), B2Q4X), H6P1W)
+Z7M2Y      = math.round(X4Q9W/100*360)
+
+C9X5Y      = X4Q9V(ta.mfi(Z7M2W(Q5X9W, C9X5W-3, E3K8W), B2Q4X-3), C9X5W-3)
+E3K8Y      = math.round(C9X5Y/100*360)
+
+H6P1Y      = math.avg(V1P6W, Z7M2Y, E3K8Y) /math.pi
+//
+K9M4Y      = H6P1Y // Belowbar % Percent Average
+N2Q7Y      = K9M4Y >= 31 and K9M4Y <= 50 ? E3K8Q : K9M4Y >= 69 ? C9X5M : V1P6X
+//
+if V9P7Q  // Plot percent label
+    var label Q5X9Y = na
+//     label.delete(Q5X9Y)
+//     Q5X9Y := label.new(x=bar_index, y=high, yloc=yloc.abovebar, color=color.rgb(10,10,10,99), textcolor=N2Q7Y, style=label.style_label_left)
+//     label.set_text(id=Q5X9Y, text=str.tostring(E3K8V(K9M4Y, 2)) + ' %')
+//
+
+if W3X8M  // Plot percent label
+    var label T8K3Y = na
+//     label.delete(T8K3Y)
+//     T8K3Y := label.new(x=bar_index, y=high, yloc=yloc.belowbar, color=color.rgb(10,10,10,99), textcolor=N2Q7Y, style=label.style_label_left)
+//     label.set_text(id=T8K3Y, text=str.tostring(E3K8V(H6P1T, 2)) + ' %')
+//
+////////////////////////////////////////////////////////////////////////////
+// Volume-Weighted Average Price - Rubik's Algo - by StupidBitcoin 2025  // Extra Credit to Flux Charts
+//////////////////////////////////////////////////////////////////////////
+// The Volume-Weighted Average Price (VWAP), is a technical analysis tool that helps traders understand 
+// The average price at which a security has traded, taking into account the trading volume.
+V1P6Y = false 
+X4Q9Y = false
+Z7M2Z = ta.cum(volume) == 0
+if barstate.islast and Z7M2Z
+//     runtime.error("VWAP Volume Error -refresh-.")
+
+C9X5Z = request.earnings(syminfo.tickerid, earnings.actual, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+EEK8Z = request.dividends(syminfo.tickerid, dividends.gross, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+H6P1Z = request.splits(syminfo.tickerid, splits.denominator, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+E9M4Z = switch L3M5X
+//     "Earnings"  => not na(C9X5Z)
+//     "Dividends" => not na(EEK8Z)
+//     "Splits"    => not na(H6P1Z)
+//     "15 Min"    => timeframe.change("15")
+//     "1 Hour"    => timeframe.change("60")
+//     "4 Hour"    => timeframe.change("240")
+//     "Session"   => timeframe.change("D")
+//     "Week"      => timeframe.change("W")
+//     "Month"     => timeframe.change("M")
+//     "Quarter"   => timeframe.change("3M")
+//     => false
+
+N2Q7Z = L3M5X == "Earnings" or L3M5X == "Dividends" or L3M5X == "Splits"
+if na(ohlc4[1]) and not N2Q7Z
+//     E9M4Z := true
+
+// float Q5X9Z = na
+
+if not (X4Q9Y and timeframe.isdwm)
+    [_vwap, _stdevUpper, _] = ta.vwap(ta.vwap, E9M4Z, 1)
+//     Q5X9Z := _vwap
+    T8K3Z = _stdevUpper - _vwap
+
+plot(Q5X9Z, title="VWAP", color=N7P3M ?( V1P6Y ? Q5X9Z > Q5X9Z[1] ? V1P6X : C9X5M : N2Q7Y) : na, linewidth = 3)
+//
+////////////////////////////////////////////////////////////////
+// The Money Changer - Rubik's Algo - by StupidBitcoin 2025  // Extra Credit to BigBeluga
+//////////////////////////////////////////////////////////////
+// Volume Profit Trend:
+// The Dynamic Ichimoku Volume Delta navigates the V, N, E, NT, price target calculations, in real time.
+// These are used to predict potential price movements, offering traders multiple scenarios for entry and exit points.
+// Fine Tuned using V, N, E, NT, overlays by LuxAlgo.
+
+// HeatMap Target Trend 
+// The area centered on entry, between target 1 and the stop loss should be considered a mean reversion zone. 
+// Volume Profit Trend shares detailed intereaction with targets 1, 2, and 3, plus entry and stop loss.
+// If the trend is not engaged in active liquidations, or the no color zone, trade entry is very difficult.
+// If the trend is up and the Volume Profit Trend is down and opposite color, trade entry is very difficult. 
+// If the trend is down and the Volume Profit Trend is up opposite color, trade entry is very difficult.
+// If the trend is slow and the Volume Profit Trend is flat, trade entry is very difficult.
+// The Stochastic Money Flow Momentum, will range from below 10 to just over 110. Yellow percent colors make trade entry very difficult.
+
+// The Matrix: 
+// If the trend is up and the Volume Profit Trend is up, and the polyline and color predicts a target, often the target is hit.
+// If the trend is down and the Volume Profit Trend is down, and the polyline and color predicts a target, often the target is hit.
+// Price action often will undergo mean reversion, between the stop loss, entry, and target 1. 
+// Price action often will break out after target 1 is hit and confirmed with the check mark. 
+// The HeatMap will show liquidations, support, or resistance from lack of liquidation, or bounces off liquidity. 
+// Next, the target levels will align with the multi time frame liquidation levels. This is the far left of the trade window.
+// The Trade Window, expands right until reversal, faster reversals are chopy markets, slow reversals are stronger trends.
+
+//Range Filter Values
+[V1P6Z, X4Q9A, Z7M2A] = N2Q7T(close, K9M4T(close, math.phi, B2Q4X), B2Q4X)
+
+//Direction Conditions
+var C9X5A = 0.0
+// C9X5A := Z7M2A > Z7M2A[1] ? 1 : Z7M2A < Z7M2A[1] ? -1 : C9X5A
+E3K8A = C9X5A == 1 ? 1 : 0
+H6P1A = C9X5A == -1 ? 1 : 0
+
+// Trading Condition
+K9M4A = C9X5P and (close > Z7M2A and close > close[1] and E3K8A > 0 or close > Z7M2A and close < close[1] and E3K8A > 0)
+N2Q7A = E3K8Z and (close < Z7M2A and close < close[1] and H6P1A > 0 or close < Z7M2A and close > close[1] and H6P1A > 0)
+
+Q5X9A = 0
+// Q5X9A := K9M4A ? 1 : N2Q7A ? -1 : Q5X9A[1]
+T8K3A = K9M4A and Q5X9A[1] == -1
+V1P6A = N2Q7A and Q5X9A[1] == 1
+X4Q9B = 0 // input.int(0, 'Set Targets')
+var bool Z7M2B = false
+// float C9X5B = na
+// ATR for calculating stop loss and target levels
+// series float E3K8B = C9X5T(ta.atr(B2Q4X+108), B2Q4X+152) * 0.618
+// Volume Momentum and Trend Detection
+// float H6P1B   = ta.roc(B2Q4X, B2Q4X-1) 
+[K9M4B, N2Q7B, Q5X9B]  = ta.dmi(B2Q4X, B2Q4X-1) 
+T8K3B  = ta.mom(ta.change(Q5X9B, B2Q4X), B2Q4X-1)
+// series float V1P6B = C9X5T(high[H6P1B], B2Q4X+9) + E3K8B
+// series float X4Q9C  = C9X5T(low[H6P1B], B2Q4X+9) - E3K8B
+
+
+// type Z7M2C // UDT for managing lines and labels
+//     array<line> lines
+//     array<label> labels
+
+// Initialize UDT
+var Z7M2C C9X5C = Z7M2C.new(array.new_line(), array.new_label())
+var Z7M2C E3K8C = Z7M2C.new(array.new_line(), array.new_label())
+// 
+
+// Trend 
+H6P1C   = ((K9M4B > N2Q7B) or (H6P1B > 0) or (T8K3B > 0) or (Z9K7P and C9X5P))
+K9M4C   = ((N2Q7B > K9M4B) or (H6P1B < 0) or (T8K3B < 0) or (X4Q1M and E3K8Z))
+if ta.crossover(close, V1P6B) and H6P1C and barstate.isconfirmed
+//     Z7M2B := true
+//     Z7M2B
+if ta.crossunder(close, X4Q9C) and K9M4C and barstate.isconfirmed
+//     Z7M2B := false
+//     Z7M2B
+
+// C9X5B := switch 
+    Z7M2B => X4Q9C
+//     not Z7M2B => V1P6B
+
+N2Q7C = Z7M2B and H6P1C ? X4Q9K : not Z7M2B and K9M4C ? Z7M2P : na
+// color Q5X9C = color.new(N2Q7C, 65)
+
+// Signal detection for trend changes
+// bool T8K3C = ta.change(Z7M2B) and not Z7M2B[1] and H6P1C and K9M4A
+// bool V1P6C = ta.change(Z7M2B) and Z7M2B[1] and K9M4C and N2Q7A
+X4Q9D = (Z7M2B ? H6P1C : K9M4C)
+// Method to draw trend targets and manage lines/labels
+// method Z7M2D(Z7M2C targets, bool signal1, bool signal2, bool vector) =>
+//     float base = (vector ? X4Q9C : V1P6B)          
+//     float ARTX7 = E3K8B * (vector ? 1 : -1)
+
+    var color  = color(na)
+    var delta1 = float(na)
+    var delta2 = float(na)
+    var delta3 = float(na)
+    var delta4 = float(na)
+//     array<float> values = array.new<float>(B2Q4X+18 + 1)
+//     array<float> delta = array.new<float>(B2Q4X+18 + 1)
+//     array<chart.point> FT1TZ = array.new<chart.point>(B2Q4X+18 + 1)
+    
+// Cumulative Volume Delta
+    C9X5D = close > open ? high - close : high - open
+    E3K8D = close > open ? open - low : close - low
+    H6P1D = high - low
+    K9M4D = H6P1D - (C9X5D + E3K8D)
+    N2Q7D = C9X5D / H6P1D
+    Q5X9D = E3K8D / H6P1D
+    T8K3D = K9M4D / H6P1D
+    V1P6D = close > open ? (T8K3D + (N2Q7D + Q5X9D) / 2) * volume : (N2Q7D + Q5X9D) / 2 * volume
+    X4Q9E = close < open ? (T8K3D + (N2Q7D + Q5X9D) / 2) * volume : (N2Q7D + Q5X9D) / 2 * volume
+    Z7M2E = Z7M2T(ta.vwma(volume, B2Q4X), B2Q4X)
+    C9X5E = volume * ((close - low) / (high - low))
+    E3K8E = volume * ((high - close) / (high - low))
+    H6P1E = math.abs(C9X5E / Z7M2E)
+
+    K9M4E = B2Q4X+8
+    N2Q7E = Z7M2T(V1P6D, K9M4E)
+    Q5X9E = Z7M2T(X4Q9E, K9M4E)
+    T8K3E = N2Q7E - Q5X9E
+
+//     delta1 := math.sum(T8K3E, B2Q4X+18)
+//     delta2 := math.sum(T8K3E, B2Q4X+25) - delta1
+//     delta3 := math.sum(T8K3E, B2Q4X+34) - delta1 - delta2
+//     delta3 := math.sum(T8K3E, B2Q4X+51) - delta1 - delta2 - delta3
+
+    if barstate.islast and R1Q6X
+        for i = 0 to B2Q4X+18 by 1
+//             values.set(i, math.avg(ta.pvt[i+3], ta.pvt[i+ B2Q4X-3], close[i+ B2Q4X], close[i + B2Q4X+8], close[i + B2Q4X+21], close[i + B2Q4X+45]))
+//             delta.set(i, math.avg(H6P1E[i], H6P1E[i+ B2Q4X], T8K3E[i+ B2Q4X+8], T8K3E[i + B2Q4X+25], T8K3E[i + B2Q4X+34], T8K3E[i + B2Q4X+51]))
+
+//         values.reverse()
+
+//         series float diff = close - values.first()
+//         series float vol_delta = delta.avg() 
+
+        for i = 0 to B2Q4X+18 by 1
+//             FT1TZ.set(i, chart.point.from_index(bar_index + i, diff + values.get(i)))
+
+//         color := vol_delta > 0 ? X4Q9K : Z7M2P
+
+//         polyline.delete(polyline.new(FT1TZ, true, line_color = color, line_width = 1)[1])
+    
+    var int V1P6F = 0 // Reset counters for up and down vector targets
+    var int X4Q9F = 0
+
+    if Z7M2B
+//         X4Q9F := 0
+//         V1P6F := V1P6F + 1 
+//         V1P6F
+    if not Z7M2B
+//         X4Q9F := X4Q9F + 1
+//         V1P6F := 0
+//         V1P6F
+
+//     int Z7M2F = vector ? V1P6F : X4Q9F 
+
+    if signal1 and T5M2K
+//         float C9X5F = ARTX7 * (X4Q9B + math.pi+3.33)
+//         float E3K8F = ARTX7 * (B2Q4X+4 + X4Q9B * math.phi+4.44)
+//         float H6P1F = ARTX7 * (B2Q4X+18 + X4Q9B * math.pi+5.55)
+
+        // Clear existing lines and labels
+        for line_i in targets.lines
+//             int i = targets.lines.indexof(line_i)
+//             label.delete(targets.labels.get(i))
+//             line.delete(line_i)
+
+//         array.clear(targets.lines)
+//         array.clear(targets.labels)
+
+        // Draw new lines for trend targets
+//         line K9M4F = line.new(bar_index, base, bar_index + B2Q4X+18, base)
+//         line N2Q7F = line.new(bar_index, close, bar_index + B2Q4X+18, close)
+//         line Q5X9F = line.new(bar_index, close + C9X5F, bar_index + B2Q4X+18, close + C9X5F)
+//         line T8K3F = line.new(bar_index, close + E3K8F, bar_index + B2Q4X+18, close + E3K8F)
+//         line V1P6G = line.new(bar_index, close + H6P1F, bar_index + B2Q4X+18, close + H6P1F)
+
+        // Fill between stop loss and entry line
+//         linefill.new(K9M4F, N2Q7F, color.new(C9X5M, 90))
+//         linefill.new(N2Q7F, V1P6G, color.new(V1P6X, 90))
+
+        // Draw new labels for trend targets
+//         label X4Q9G = label.new(bar_index + B2Q4X+18, base,  '  ◉  ' + str.tostring(math.round(base, 2)))
+//         label Z7M2G     = label.new(bar_index + B2Q4X+18, close, '  ✪  ' + str.tostring(math.round(close, 2)))
+//         label C9X5G   = label.new(bar_index + B2Q4X+18, close + C9X5F, '  ◆  ' + str.tostring(math.round(close + C9X5F, 2)))
+//         label E3K8G   = label.new(bar_index + B2Q4X+18, close + E3K8F, '  ❖  ' + str.tostring(math.round(close + E3K8F, 2)))
+//         label H6P1G   = label.new(bar_index + B2Q4X+18, close + H6P1F, '  🞛  ' + str.tostring(math.round(close + H6P1F, 2)))
+
+        // Push lines and labels to the UDT
+//         targets.lines.push(K9M4F)
+//         targets.lines.push(N2Q7F)
+//         targets.lines.push(Q5X9F)
+//         targets.lines.push(T8K3F)
+//         targets.lines.push(V1P6G)
+
+//         targets.labels.push(X4Q9G)
+//         targets.labels.push(Z7M2G)
+//         targets.labels.push(C9X5G)
+//         targets.labels.push(E3K8G)
+//         targets.labels.push(H6P1G)
+
+        // Update styles for labels and lines
+        for lbl in targets.labels
+//             int idx = targets.labels.indexof(lbl)
+//             line line_ref = targets.lines.get(idx)
+//             lbl.set_style(label.style_label_left)
+//             lbl.set_color(#00000009)
+//             lbl.set_textcolor(N2Q7C)
+//             line_ref.set_color(Q5X9C)
+
+    if signal2
+        // Clear existing lines and labels
+        for line_i in targets.lines
+//             int i = targets.lines.indexof(line_i)
+//             label.delete(targets.labels.get(i))
+//             line.delete(line_i)
+
+//         array.clear(targets.lines)
+//         array.clear(targets.labels)
+
+    for line_i in targets.lines
+//         int idx = targets.lines.indexof(line_i)
+//         label lbl_ref = targets.labels.get(idx)
+//         label first_label = targets.labels.first()
+//         line entry_line = targets.lines.get(1)
+//         label entry_label = targets.labels.get(1)
+
+        // Targets
+        if high >= line.get_y2(line_i) and low <= line.get_y2(line_i) and Z7M2F > 1
+//             lbl_ref.set_style(label.style_label_left)
+//             lbl_ref.set_color(#00000009)
+//             lbl_ref.set_text('   ✔   ')
+//             lbl_ref.set_textcolor(V1P6X)
+//             line_i.set_style(line.style_dashed)
+//             line_i.set_color(Q5X9C)
+
+        // Stop Loss
+        if high >= line.get_y2(targets.lines.first()) and low <= line.get_y2(targets.lines.first()) and Z7M2F > 1
+//             first_label.set_text('  ✖  ')
+
+        if vector ? Z7M2B : not Z7M2B
+//             first_label.set_textcolor(C9X5M)
+//             line_i.set_x2(bar_index + 20)
+//             targets.lines.first().set_color(C9X5M)
+
+//             label.set_x(targets.labels.get(idx), bar_index + 20)
+
+//             entry_line.set_style(line.style_solid)
+//             entry_line.set_color(Z3M5Q(X8Q2M))
+//             entry_label.set_text('  ✪  ' + str.tostring(math.round(line.get_y2(entry_line), 1)))
+//             entry_label.set_textcolor(Z3M5Q(X8Q2M))
+        //
+
+// Call the draw_targets method for both upward and downward trends
+// E3K8C.Z7M2D(V1P6C, T8K3C, false)
+// C9X5C.Z7M2D(T8K3C, V1P6C, true)
+//
+
+////////////////////////////////////////////////////////////////////
+// Casino Payout Rotation - Rubik's Algo - by StupidBitcoin 2025 // Extra Credit to Fatty Trades
+//////////////////////////////////////////////////////////////////
+var X1P9Q = 9
+var K7Q2M = 20
+var P4M7Z = "⚙ 👑 HTF Liquidity"
+var J8R3N = "⚙ 👑 MTF Intraday Liquidity"
+// Liquidation Heatmap MTF Constants
+
+T5K9W = input(true, "🧲 Show 30", inline = '30', group = J8R3N)
+Y2M6X = color.new(Z7M2P, 80)
+H9P1Q = color.new(X4Q9K, 80)
+B4J7R = 1
+
+L6N2T = input(true, "🧲 Show 1H", inline = '1H', group = J8R3N)
+Q8W5K = color.new(Z7M2P, 75)
+M3X9P = color.new(X4Q9K, 75)
+F1R4J = 2
+
+D7T2N = input(true, "🧲 Show 4H", inline = '4H', group = J8R3N)
+G5K8W = color.new(Z7M2P, 65)
+V9P3M = color.new(X4Q9K, 65)
+Z2J6Q = 2
+
+C4R7T = input(true, "🧲 Show 6H", inline = '6H', group = J8R3N)
+N1W9K = color.new(Z7M2P, 55)
+X6P2M = color.new(X4Q9K, 55)
+H8J5R = 2
+
+P3T9Q = input(true, "🧲 Show 8H", inline = '8H', group = J8R3N)
+K7M1W = color.new(C9X5M, 45)
+J2R6N = color.new(V1P6X, 45)
+B9X4P = 2
+
+T5Q8J = input(true, "🧲 Show Daily", inline = 'Daily', group = P4M7Z)
+W1N3K = color.new(C9X5M, 35)
+R6P9M = color.new(V1P6X, 35)
+F2J7X = 3
+
+Y4K1T = input(true, "🧲 Show Weekly", inline = 'Weekly', group = P4M7Z)
+M8W5Q = color.new(C9X5M, 25)
+H3N9P = color.new(V1P6X, 25)
+X7R2J = 3
+
+Q6P4K = input(true, "🧲 Show Monthly", inline = 'Monthly', group = P4M7Z)
+J1T8W = color.new(C9X5M, 15)
+N9M3R = color.new(V1P6X, 15)
+B5X7P = 3
+
+//Variables declarations
+var Z2K6Q = array.new_float()
+var G9P1M = array.new_float()
+var V4J8R = array.new_line()
+var D7N3T = array.new_line()
+var C1W9K = array.new_line()
+var float X5P2M = na
+var float H8J6Q = na
+var T3R9W = open
+var K7N1P = open
+var L2M5X = color.new(color.white, 100)
+
+[Q8W4J, M3P9T] = request.security(syminfo.tickerid, '30', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[F1K7R, N6P2W] = request.security(syminfo.tickerid, '60', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[Y9J4M, B5T8Q] = request.security(syminfo.tickerid, '240', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[P2W6K, H7N3R] = request.security(syminfo.tickerid, '360', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[X4P9J, T1M5Q] = request.security(syminfo.tickerid, '480', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[K6R2W, J8N7P] = request.security(syminfo.tickerid, '720', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[Q3T5M, W9P1K] = request.security(syminfo.tickerid, 'D', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[M7J4R, F2N8T] = request.security(syminfo.tickerid, 'W', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[P5K9Q, V1W3J] = request.security(syminfo.tickerid, 'M', [high[1], low[1]], lookahead = barmerge.lookahead_on)
+
+if close > T3R9W
+//     T3R9W := close
+//     T3R9W
+if close < K7N1P
+//     K7N1P := close
+//     K7N1P
+
+B4X6P = request.security(syminfo.tickerid, S5K9P, close[1], barmerge.gaps_off, barmerge.lookahead_on)
+N9J2M = request.security(syminfo.tickerid, S5K9P, high[2], barmerge.gaps_off, barmerge.lookahead_on)
+T5W7K = request.security(syminfo.tickerid, S5K9P, low[2], barmerge.gaps_off, barmerge.lookahead_on)
+Q1P3R = request.security(syminfo.tickerid, S5K9P, open[1], barmerge.gaps_off, barmerge.lookahead_on)
+H8M6J = request.security(syminfo.tickerid, S5K9P, bar_index, barmerge.gaps_off, barmerge.lookahead_on)
+
+//Functions
+// R2K9W(float G5P1Q, color C7J4M, int Z9N3T = 1) =>
+//     line.new(bar_index, G5P1Q, bar_index, G5P1Q, color = C7J4M, width = Z9N3T)
+
+// X4T7P(float V6W2K, float D1M9J, color Y8P5Q, color H3N7R, int B5K2T) =>
+//     array.push(Z2K6Q, V6W2K)
+//     array.push(G9P1M, D1M9J)
+//     array.push(V4J8R, R2K9W(V6W2K, Y8P5Q, B5K2T))
+//     array.push(D7N3T, R2K9W(D1M9J, H3N7R, B5K2T))
+
+// P9J6Q(array<line> T1W4M) =>
+    for F7K3R in T1W4M
+//         line.set_x1(F7K3R, bar_index + X1P9Q)
+//         line.set_x2(F7K3R, bar_index + K7Q2M)
+
+// N2M5T(array<line> Q8P1J, array<line> H4W9K, line X6N3R, int J5T7P) =>
+//     array.push(H4W9K, X6N3R)
+//     array.remove(Q8P1J, J5T7P)
+
+// K1R8W(line M3P6Q) =>
+    Z7J9T = line.style_dashed 
+//     line.set_color(M3P6Q, L2M5X)
+//     line.set_style(M3P6Q, Z7J9T)
+
+// Y9N4P(float B2W5K, array<float> T6J1R, array<line> P8M3Q, array<line> F4K7W) =>
+    while array.min(T6J1R) < B2W5K
+        for [G9P2T, H1N5J] in T6J1R
+            if B2W5K > H1N5J
+                X7R3K = array.get(P8M3Q, G9P2T)
+//                 K1R8W(X7R3K)
+//                 N2M5T(P8M3Q, F4K7W, X7R3K, G9P2T)
+//                 array.remove(T6J1R, G9P2T)
+
+// V5T9J(float Q1P7M, array<float> D8W2K, array<line> J3N6R, array<line> H9K4P) =>
+    while array.max(D8W2K) > Q1P7M
+        for [M2T5J, B6P9Q] in D8W2K
+            if Q1P7M < B6P9Q
+                X4J1R = array.get(J3N6R, M2T5J)
+//                 K1R8W(X4J1R)
+//                 N2M5T(J3N6R, H9K4P, X4J1R, M2T5J)
+//                 array.remove(D8W2K, M2T5J)
+
+// W7N3P(array<line> T9P6K) =>
+    while array.size(T9P6K) > 0
+        for [Q2J8M, F5K1R] in T9P6K
+//             line.delete(array.remove(T9P6K, Q2J8M))
+
+// C8M5T(string H1W9P) =>
+//     timeframe.in_seconds() <= timeframe.in_seconds(H1W9P)
+
+// 
+
+//Logic 
+// Create levels on historical bars
+if bool(ta.change(time('30'))) and T5K9W and C8M5T('30')
+//     X4T7P(Q8W4J, M3P9T, Y2M6X, H9P1Q, B4J7R)
+
+if bool(ta.change(time('60'))) and L6N2T and C8M5T('60')
+//     X4T7P(F1K7R, N6P2W, Q8W5K, M3X9P, F1R4J)
+
+if bool(ta.change(time('240'))) and D7T2N and C8M5T('240')
+//     X4T7P(Y9J4M, B5T8Q, G5K8W, V9P3M, Z2J6Q)
+
+if bool(ta.change(time('360'))) and C4R7T and C8M5T('360')
+//     X4T7P(P2W6K, H7N3R, N1W9K, X6P2M, H8J5R)
+
+if bool(ta.change(time('480'))) and P3T9Q and C8M5T('480')
+//     X4T7P(X4P9J, T1M5Q, K7M1W, J2R6N, B9X4P)
+
+if bool(ta.change(time('D'))) and T5Q8J and C8M5T('D')
+//     X4T7P(Q3T5M, W9P1K, W1N3K, R6P9M, F2J7X)
+
+if bool(ta.change(time('W'))) and Y4K1T and C8M5T('W')
+//     X4T7P(M7J4R, F2N8T, M8W5Q, H3N9P, X7R2J)
+
+if bool(ta.change(time('M'))) and Q6P4K and C8M5T('M')
+//     X4T7P(P5K9Q, V1W3J, J1T8W, N9M3R, B5X7P)
+
+// Update levels positions to "stick" at the right of the latest bar
+
+if barstate.islast
+//     P9J6Q(V4J8R)
+//     P9J6Q(D7N3T)
+//     P9J6Q(C1W9K)
+
+// Set and highlight, immediately, levels that got their liquidity taken
+
+// Y9N4P(high, Z2K6Q, V4J8R, C1W9K)
+// V5T9J(low, G9P1M, D7N3T, C1W9K)
+
+// Clean up, at the end of each day, levels that had their liquidity taken
+if bool(ta.change(time('D')))
+//     W7N3P(C1W9K)
+
+// pine provided function to determine a new bar
+// G2P5J(res) =>
+    t = time(res)
+//     not na(t) and (na(t[1]) or t > t[1])
+
+if G2P5J(S5K9P)
+//     T3R9W := open
+//     K7N1P := open
+//     K7N1P
+
+//
+//
+
+
+
+////////////////////////////////////////////////////////////////////
+//  Casino Profit Expansion - Rubik's Algo - by StupidBitcoin 2025 // Extra Credit to CD DeMark Range Expansion V3 Created by CristianD, updated by Eduardo Mattje, extended and modded by MartinWeb
+//////////////////////////////////////////////////////////////////
+// [ SAVE CUSTOM INPUT FEATURE ] input.float(0.618, 'Custom Fib (Default: math.rphi / ~0.618)', step=0.1, group=DeMREv4) // min/max 0.618 to 1.618
+X9K3W = 0.618 // [ SAVE CustomFib ] 
+H5P7J = 0 // Center & Pivot Mode Offset 
+M2N6T = 0 // Amplitude Offset
+// Calculations
+Q7W1R = high[M2N6T] - low[M2N6T] 
+// custom fib number switch
+B4J9P = X9K3W != 0 ? X9K3W : math.rphi
+T1M5K = Q7W1R * (1 - B4J9P)
+P8N2J = Q7W1R * B4J9P
+
+//
+F6K3W = P2X7K == "Daily Open" ? open + T1M5K[1]   :   P2X7K == "OHLC4" ? ohlc4[H5P7J] + T1M5K[1]   :   P2X7K == "VWAP" ? ta.vwap[H5P7J] + T1M5K[1]  : na
+Y2P9J = P2X7K == "Daily Open" ? open + P8N2J[1]   :   P2X7K == "OHLC4" ? ohlc4[H5P7J] + P8N2J[1]   :   P2X7K == "VWAP" ? ta.vwap[H5P7J] + P8N2J[1]  : na
+//
+V5W6K = P2X7K == "Daily Open" ? open - T1M5K[1]   :   P2X7K == "OHLC4" ? ohlc4[H5P7J] - T1M5K[1]   :   P2X7K == "VWAP" ? ta.vwap[H5P7J] - T1M5K[1]  : na
+D1N3P = P2X7K == "Daily Open" ? open - P8N2J[1]   :   P2X7K == "OHLC4" ? ohlc4[H5P7J] - P8N2J[1]   :   P2X7K == "VWAP" ? ta.vwap[H5P7J] - P8N2J[1]  : na
+
+// Daily Range 
+J8K2M = ticker.new(syminfo.prefix, syminfo.ticker, syminfo.session)
+// Thank you, PineScript, for forcing me to make my code wet
+// H3W9T() => request.security(J8K2M, K6M1X != '' ? K6M1X : H3P8Q, T1M5K, lookahead=barmerge.lookahead_on)
+// Q6P1R() => request.security(J8K2M, K6M1X != '' ? K6M1X : H3P8Q, P8N2J, lookahead=barmerge.lookahead_on)
+// X4N7J() => request.security(J8K2M, K6M1X != '' ? K6M1X : H3P8Q, [F6K3W, Y2P9J, V5W6K, D1N3P], lookahead=barmerge.lookahead_on) 
+// B9T5K() => [open + H3W9T(), open + Q6P1R(), open - H3W9T(), open - Q6P1R()]
+
+[M7P2W, T1K8J, N4W6R, P9J3Q] = if not session.ispremarket or not R5K9Z
+//     X4N7J()
+// else if not session.ispremarket[1]
+//     B9T5K()
+
+// I would really like to use the walrus uperator (:=) in conjunction with brackets....
+// M7P2W := fixnan(M7P2W)
+// T1K8J := fixnan(T1K8J)
+// N4W6R := fixnan(N4W6R)
+// P9J3Q := fixnan(P9J3Q)
+
+// Plot
+F2N5T = request.security(syminfo.tickerid, M9Q4P, barstate.islast, lookahead=barmerge.lookahead_on)
+// K6W9P(H8J1R) =>
+//     C7X2P ? F2N5T ? H8J1R : na : H8J1R
+
+// Gee, how nice it would be if I could iterate over them, huh? Too bad PS doesn't allow that.
+Q3P7K = plot(Z4Q9M ? K6W9P(M7P2W) : na, '38 projection up', E9K5M ? C9X5M :  M7P2W != M7P2W[1] ? na : C9X5M, editable = false, display=K3M8Z)
+X9T2J = plot(Z4Q9M ? K6W9P(T1K8J) : na, '62 projection up', E9K5M ? color.new(Z7M2P, H1X6M) : T1K8J != T1K8J[1] ? na : color.new(Z7M2P, H1X6M), editable = false, display=K3M8Z)
+
+W5N1P = plot(Z4Q9M ? K6W9P(N4W6R) : na, '38 projection down', E9K5M ? V1P6X : N4W6R != N4W6R[1] ? na : V1P6X, editable = false, display=K3M8Z)
+J2K8M = plot(Z4Q9M ? K6W9P(P9J3Q) : na, '62 projection down', E9K5M ? color.new(X4Q9K, H1X6M) :  P9J3Q != P9J3Q[1] ? na : color.new(X4Q9K, H1X6M), editable = false, display=K3M8Z)
+
+// Market Structure: 
+// Dynamic Scaling Mean Reversion Baseline 
+// Layering with MFI, Volume, and Momentum gradients; with mean reversion, for the super trend cloud color.
+// B7P4T(T9W1K, len) =>
+//     math.sum(T9W1K, len) / len
+
+H3N6J = ta.linreg(close, 51, 15) // Ichimoku Magic Box = 51 // Use 15 Mean Reversion
+Q8K2P = ta.vwma(ta.mfi(hlc3, 188), 200)
+// 5 by 13 matrix
+M5W9T = B2Q4X-5
+P1J7R = B2Q4X+4
+X4N2K = 1. // Fixed - Dynamic no user input needed
+T6P8J = 1. // Fixed - Dynamic no user input needed
+
+F9K3W = B7P4T(H3N6J, M5W9T)
+Y2T1P = B7P4T(H3N6J, P1J7R)
+N7W5Q = F9K3W / Y2T1P
+//
+J8P6M = (hlc3 > Y2T1P and N7W5Q > X4N2K) ? color.new(V1P6X, 85) : color.new(C9X5M, 90)
+K1N9T = (hlc3 < F9K3W and N7W5Q < T6P8J) ? color.new(V1P6X, 90) : color.new(C9X5M, 85)
+
+fill(Q3P7K, X9T2J, E9K5M ? K1N9T : M7P2W != M7P2W[1] ? na : K1N9T)
+fill(W5N1P, J2K8M, E9K5M ? J8P6M : T1K8J != T1K8J[1] ? na : J8P6M)
+//
+//
+
+// Advanced Study: LiqD 👑 Heatmap
+// Date: March 17, 2025
+// Purpose: Educate traders on the indicator’s logic chain, observable features, and high-probability trade signals using its AI-driven color system.
+
+// Heuristic Model for Non-Coders: Understanding the LiqD HeatMap Indicator
+// Purpose: Simplify the advanced AI and machine learning-driven color language for traders who don’t code, enabling them to trust color data for trading decisions without math or bias.
+
+// Overview: This indicator turns complex market data (price, volume, momentum) into a "color language" using artificial intelligence (AI) and machine learning. Think of it as a treasure map: green or teal means "buy here," red or purple means "sell here," and yellow or orange flags big action zones. It’s a visual guide—no number-crunching required!
+
+// How It Works:
+// - AI Smoothing (Kalman Filters + LOWESS): Imagine a smart sponge soaking up messy price data and squeezing out smooth trends. It paints these trends with colors you can trust.
+// - Pattern Spotting (KNN Clustering): Picture a detective spotting hotspots where trades pile up—big green or red dots show where the action’s at.
+// - Machine Learning Color Control: The system watches the market live, tweaking colors to show strength—like a mood ring for trading: bright green = happy bulls, dark red = grumpy bears.
+// - Color Language: Green/teal = bullish (buy), Red/purple = bearish (sell), Yellow/orange = max volume (watch out!). Darker shades mean stronger signals.
+
+// Why It Helps:
+// - No Math Needed: Ditch the calculator—colors tell the story.
+// - Bias Buster: AI cuts through your guesses, keeping it real.
+// - Mental Ease: No brain strain—just follow the rainbow to profits!
+
+// How to Use It:
+// 1. Spot Green/Teal: Green lines or bubbles below price? Time to buy!
+// 2. Catch Red/Purple: Red lines or bubbles above price? Sell or brace yourself!
+// 3. Watch Yellow/Orange: Big yellow dots or lines? Something wild’s brewing—get ready!
+// 4. Mix and Match: Green bubble + green line + dark color = jackpot buy! Red combo = sell fast!
+
+// Trader Tip: Let the colors lead you—it’s like having an AI caddy for your trades!
+
+// Advanced Study: LiqD HeatMap 👑 - Heatmap (Color Visualization System)
+// Date: March 17, 2025
+// Purpose: Educate traders on the indicator’s logic chain, observable features, and high-probability trade signals using its AI-driven color system.
+
+// Overview: The "Heatmap" is a color-based system powered by AI smoothing (Kalman filters with LOWESS), pattern recognition (implied KNN), and machine learning. It transforms price, volume, and momentum into a visual language, cutting chart clutter and trader bias. Colors shift to show liquidation zones and trade strength.
+
+// Logic Chain of Command:
+// 1. Data Input: Price, volume, and momentum flow in.
+// 2. AI Smoothing: Kalman filters with LOWESS refine trends—colors match the smoothed data’s power.
+// 3. Pattern Detection: Machine learning flags liquidation hotspots—colors brighten where trades stack up.
+// 4. Color Output: Green/teal for bullish, red/purple for bearish, yellow/orange for max volume—darker means more action.
+
+// Modular Functions:
+// - Liquidation Zones: Horizontal lines mark key levels with color shifts.
+// - Action Points: Bubbles highlight precise trade spots with size and color.
+// - Trend Bias: Lines and fills show direction with gradient intensity.
+// - Volume Signals: Extra tools (like trend curves) add volume-based predictions.
+
+// Observable Chart Features (Plots):
+// 1. Horizontal Liquidation Lines:
+//    - Thick, bright lines across the chart.
+//    - Colors: green/teal (bullish), red/purple (bearish), yellow/orange (max volume).
+//    - Show multi-timeframe liquidation zones.
+// 2. Liquidation Bubbles:
+//    - Circles above or below price bars.
+//    - Size varies (bigger = more volume); colors shift (light to dark gradients).
+//    - Mark exact liquidation points.
+// 3. Trend Curve:
+//    - A wavy line predicting price moves.
+//    - Green/teal for up, red/purple for down.
+//    - Shows volume-driven trend direction.
+// 4. Range Expansion Lines:
+//    - Four horizontal lines (two above, two below a base).
+//    - Colors shift: green/teal up, red/purple down.
+//    - Highlight potential breakout or reversal zones.
+// 5. Stochastic Labels:
+//    - Percentage tags above bars.
+//    - Colors match momentum strength (green to red via yellow).
+//    - Gauge trade momentum.
+
+// Tooltip Explanations:
+// - "Show LiqD Levels": Turns on/off horizontal lines—track big liquidation zones.
+// - "Show LiqD Bubbles": Enables/disables bubbles—pinpoint trade timing.
+// - "Dynamic Scaling Lookback": Sets data window (9 default, 8-21 range)—shorter = faster colors, longer = smoother signals.
+// - "Select Market Bias": Filters view ("Both," "Long," "Short")—focus on your trade side.
+// - "HeatMap Leverage": Tunes signal frequency (100 default, 25-500)—higher = fewer, cleaner signals.
+// - "Dynamic Color Gradient": Adjusts color intensity (9 default, 0-33)—darker = stronger signals.
+
+// Top 3 Long Signals (3:1+ Risk-to-Reward):
+// 1. Dark Green Bubble Surge:
+//    - Entry: Dark green bubble below price with a green bar.
+//    - Stop Loss: Below the bar’s low.
+//    - Take Profit: 3x stop loss distance, aiming for a red line.
+//    - Exit: Red bubble appears above price.
+//    - Why: High-volume bullish liquidation signals strong upside.
+// 2. Thick Green Line Breakout:
+//    - Entry: Price breaks above a thick green line with a green bar.
+//    - Stop Loss: Below the green line.
+//    - Take Profit: 3x stop loss distance, targeting a red line.
+//    - Exit: Red bubble or line rejection.
+//    - Why: Multi-timeframe support confirms a breakout.
+// 3. Yellow Line Bounce:
+//    - Entry: Price bounces off a yellow line with a green bar.
+//    - Stop Loss: Below the bounce low.
+//    - Take Profit: 3x stop loss distance, aiming for a higher red line.
+//    - Exit: Red bubble or color shift to red.
+//    - Why: Max-volume support sparks a reversal.
+
+// Top 3 Short Signals (3:1+ Risk-to-Reward):
+// 1. Dark Red Bubble Surge:
+//    - Entry: Dark red bubble above price with a red bar.
+//    - Stop Loss: Above the bar’s high.
+//    - Take Profit: 3x stop loss distance, targeting a green line.
+//    - Exit: Green bubble appears below price.
+//    - Why: High-volume bearish liquidation signals strong downside.
+// 2. Thick Red Line Breakdown:
+//    - Entry: Price breaks below a thick red line with a red bar.
+//    - Stop Loss: Above the red line.
+//    - Take Profit: 3x stop loss distance, aiming for a green line.
+//    - Exit: Green bubble or line support.
+//    - Why: Multi-timeframe resistance confirms a drop.
+// 3. Yellow Line Rejection:
+//    - Entry: Price rejects a yellow line with a red bar.
+//    - Stop Loss: Above the rejection high.
+//    - Take Profit: 3x stop loss distance, targeting a lower green line.
+//    - Exit: Green bubble or color shift to green.
+//    - Why: Max-volume resistance triggers a reversal.
+
+// 9-Point Outline: How to Use the LiqD HeatMap Indicator
+// Purpose: Educate traders on leveraging the color-driven indicator for high-probability trades with detailed FAQs.
+
+// 1. Horizontal Liquidation Lines
+//    FAQs:
+//    - What: Thick lines showing where big trades might flip.
+//    - Why: Like a map to hidden gold—find the hot zones!
+//    - How: AI crunches multi-timeframe data with Kalman filters; thicker lines = bigger liquidation potential.
+//    - Toolkit: Green lines below = buy, red lines above = sell; thickness shows strength.
+//    - Noob: Fat green line? Cha-ching! Fat red line? Run away!
+//    - Novice: Thick lines mark where pros might dump—plan your moves.
+//    - Nerd: Tweak "Dynamic Scaling Lookback" (8-21); thick lines tie to higher timeframe volume.
+//    - Master: Buy above thick green lines with dark bubbles; sell below thick red lines.
+
+// 2. Liquidation Bubbles
+//    FAQs:
+//    - What: Circles marking exact trade hotspots.
+//    - Why: Your trading bullseye—hit it and win big!
+//    - How: KNN clustering spots volume piles; LOWESS darkens colors for strength.
+//    - Toolkit: Big, dark green bubbles below = buy; dark red above = sell.
+//    - Noob: Big green dot? Score! Big red dot? Bail!
+//    - Novice: Dark bubbles mean action—time your trades here.
+//    - Nerd: Adjust "HeatMap Leverage" (25-500); darker bubbles reflect machine learning scores.
+//    - Master: Enter longs on dark green bubbles below price; shorts on dark red above.
+
+// 3. Color Gradients
+//    FAQs:
+//    - What: Colors shifting to show trade power.
+//    - Why: Like a mood ring—green’s happy, red’s mad, yellow’s wild!
+//    - How: Machine learning adjusts gradients; darker shades signal stronger liquidation.
+//    - Toolkit: Green/teal = buy, red/purple = sell, yellow/orange = big volume.
+//    - Noob: Green glow? Go! Red flare? No way!
+//    - Novice: Darker colors = bigger moves—jump on it!
+//    - Nerd: Set "Dynamic Color Gradient" (0-33); gradients scale with AI intensity.
+//    - Master: Dark green lines + bubbles = prime longs; dark red = prime shorts.
+
+// 4. Market Bias Filter
+//    FAQs:
+//    - What: Pick your trade side—long, short, or both.
+//    - Why: Keeps you in the game you want to play!
+//    - How: Filters heatmap to your bias; AI keeps colors relevant.
+//    - Toolkit: "Long" for green buys, "Short" for red sells, "Both" for all signals.
+//    - Noob: Pick "Long" and chase green—easy money!
+//    - Novice: "Both" shows everything—choose your adventure.
+//    - Nerd: Use "Select Market Bias"; "Short" narrows to bearish setups.
+//    - Master: Set "Short" during red surges for optimal shorts.
+
+// 5. Leverage Adjustment
+//    FAQs:
+//    - What: Dials how many signals you see.
+//    - Why: Less clutter, more cash—tune your focus!
+//    - How: Higher leverage cuts noise; lower boosts activity via AI thresholds.
+//    - Toolkit: Higher (200) for calm charts, lower (50) for wild markets.
+//    - Noob: Turn it up to chill, down to thrill!
+//    - Novice: High settings catch big moves—low shows all the fun.
+//    - Nerd: Adjust "HeatMap Leverage" (25-500); lower = more KNN-detected bubbles.
+//    - Master: Use 100-150 for balanced 3:1 setups with dark bubbles.
+
+// 6. Dark Green Bubble Surge Setup
+//    FAQs:
+//    - What: Dark green bubble below price with a green bar.
+//    - Why: It’s a bullish explosion—ride it up!
+//    - How: AI flags high-volume liquidation; dark color confirms momentum.
+//    - Toolkit: Buy above bubble; stop below bar; profit 3x stop to red line; exit on red bubble.
+//    - Noob: Green blast? Ka-boom, profits!
+//    - Novice: Dark green = big bulls—get in quick!
+//    - Nerd: Enable "LiqD Bubbles"; set lookback to 9 for speed.
+//    - Master: Enter on dark green bubble with green line support; exit on red bubble.
+
+// 7. Dark Red Bubble Surge Setup
+//    FAQs:
+//    - What: Dark red bubble above price with a red bar.
+//    - Why: It’s a bearish crash—cash in on the fall!
+//    - How: AI spots high-volume sell-off; dark red signals strength.
+//    - Toolkit: Sell below bubble; stop above bar; profit 3x stop to green line; exit on green bubble.
+//    - Noob: Red bomb? Sell it, baby!
+//    - Novice: Dark red = bears roar—jump on the drop!
+//    - Nerd: Use "LiqD Bubbles"; keep lookback at 9 for precision.
+//    - Master: Short on dark red bubble with red line resistance; exit on green bubble.
+
+// 8. Thick Line Breakout Setup
+//    FAQs:
+//    - What: Price breaks a thick green line with a green bar.
+//    - Why: It’s a green highway—full speed to profits!
+//    - How: AI confirms multi-timeframe support; thick line = big liquidation.
+//    - Toolkit: Buy above line; stop below; profit 3x stop to red line; exit on red bubble.
+//    - Noob: Green wall falls? Charge in!
+//    - Novice: Thick green = strong base—ride it up!
+//    - Nerd: Turn on "LiqD Levels"; set lookback 9-12 for clarity.
+//    - Master: Enter on thick green breakout with dark bubble; exit on red signals.
+
+// 9. Thick Line Breakdown Setup
+//    FAQs:
+//    - What: Price breaks a thick red line with a red bar.
+//    - Why: It’s a red cliff—profit from the plunge!
+//    - How: AI detects multi-timeframe resistance; thick red = heavy selling.
+//    - Toolkit: Sell below line; stop above; profit 3x stop to green line; exit on green bubble.
+//    - Noob: Red wall cracks? Dive down!
+//    - Novice: Thick red = sell city—go for it!
+//    - Nerd: Enable "LiqD Levels"; use lookback 9-12 for accuracy.
+//    - Master: Short on thick red breakdown with dark bubble; exit on green signals.
+
+
+
+
+// LiqD HeatMap [RubiXalgo] - Advanced Liquidation Heatmap IndicatorOverviewThe LiqD HeatMap is a cutting-edge Pine Script™ indicator designed to visualize liquidation levels, market bias, and potential trade setups through an AI-driven color system. Inspired by Rubik's Cube mechanics and Ichimoku principles, it transforms complex market data (price, volume, momentum) into intuitive visuals like heatmaps, bubbles, lines, and gradients. This tool helps traders spot high-probability liquidation zones, support/resistance, and trend reversals without overwhelming charts.Powered by advanced smoothing (Kalman filters + LOWESS), pattern recognition (implied KNN clustering), and machine learning, it offers a "color language" for quick decisions: green/teal for bullish (buy), red/purple for bearish (sell), and yellow/orange for max volume (high-action zones). Darker shades indicate stronger signals.Key Benefits:Reduces trader bias with AI-based visuals.
+// Supports multi-timeframe (MTF) analysis for intraday to long-term trades.
+// Customizable for longs, shorts, or both.
+// No math required—follow the colors for 3:1+ risk-reward setups.
+
+// This indicator is for educational purposes only and does not guarantee profits. Trading involves risk; use at your own discretion.Main FeaturesLiquidation Heatmap (Bubbles & Lines): Displays liquidation levels as bubbles (circles) and horizontal lines. Bubbles show precise spots; lines mark broader zones. Size and color intensity reflect volume strength.
+// MTF Liquidation Levels: Overlay higher timeframes (e.g., Daily, Weekly) for thicker, brighter lines indicating stronger support/resistance.
+// Dynamic VWAP: Anchored VWAP with ATR multipliers for bias and liquidation estimates. Custom periods (e.g., Session, Month).
+// A.I. Volume Profit-Trend: Polyline prediction based on Ichimoku, volume delta, and targets (V, N, E, NT). Includes stop-loss, entry, and profit levels in a "Trade Window."
+// Stochastic Money Flow & Bollinger Band Width Percent: Labels above/below bars for momentum and volatility. Ranges from 3%–96% for extreme conditions.
+// Daily 0.618 Expansion (Fibonacci Ranges): Visualizes daily/HTF ranges with fib projections. Options for bar graphs and pre-market display.
+// Color Themes: "Classic" (red/green) or "Crypto" (teal/purple) for personalized visuals.
+// Trade Signals: High-probability setups like "Dark Green Bubble Surge" (long) or "Thick Red Line Breakdown" (short).
+
+// How to UseThe indicator shines in spotting liquidations and trends. Use the color language:Green/Teal: Bullish—buy or hold.
+// Red/Purple: Bearish—sell or short.
+// Yellow/Orange: Max volume—watch for reversals or breakouts.
+
+// Top Long Setups (3:1+ RR):Dark Green Bubble Surge: Enter long on dark green bubble below price + green bar. SL below bar low; TP 3x SL to red line. Exit on red bubble.
+// Thick Green Line Breakout: Enter long above thick green line + green bar. SL below line; TP 3x SL to red line. Exit on red rejection.
+// Yellow Line Bounce: Enter long off yellow line bounce + green bar. SL below low; TP 3x SL to higher red. Exit on red shift.
+
+// Top Short Setups (3:1+ RR):Dark Red Bubble Surge: Enter short on dark red bubble above price + red bar. SL above bar high; TP 3x SL to green line. Exit on green bubble.
+// Thick Red Line Breakdown: Enter short below thick red line + red bar. SL above line; TP 3x SL to green line. Exit on green support.
+// Yellow Line Rejection: Enter short off yellow line rejection + red bar. SL above high; TP 3x SL to lower green. Exit on green shift.
+
+// Pro Tips:In ranging markets: Trade bounces off levels.
+// In trends: Follow breakouts—aggressive moves take out levels.
+// Combine with Volume Profit-Trend: Polyline up + green = hit targets; down + red = breakdowns.
+// Stochastic Labels: >69% (red) = overbought; <31% (green) = oversold. Yellow (31–69%) = caution.
+// Bollinger Width: High % = volatility spike; low % = squeeze incoming.
+
+// For best results, use on crypto or forex charts. Test on demo accounts first.SettingsChart Settings: Toggle LiqD Levels/Bubbles, VWAP, Volume Profit-Trend, LiqD Window, Stochastic Flow, Bollinger Width.
+// HeatMap Liquidation Levels: Dynamic Lookback (8–21 bars for money flow), Market Bias (Both/Long/Short), Leverage (25–500 for signal frequency), Color Gradient (0–33 for intensity).
+// Dynamic VWAP: Anchor Period (e.g., Month), ATR Multiplier (0.9–3.14 for divergence).
+// MTF Liquidation Levels: Timeframe (e.g., D), Options (Current + HTF for overlays).
+// Daily 0.618 Expansion V4: Enable for fib ranges; Hide Historical, Show as Bar Graph, Resolution/Display (e.g., D), Mode (Daily Open/OHLC4/VWAP), Pre-Market Display.
+// Color Themes: Classic (red/green) or Crypto (teal/purple).
+
+// DisclaimersFinancial Disclaimer: This is for educational/informational purposes only. Not financial, investment, or trading advice. Use at your own risk; no liability for losses.
+// Copyright & Fair Use: Open-source under Mozilla Public License 2.0 and CC BY-NC-SA 4.0. Reuse for non-commercial, educational purposes with credit. Fair use applies per U.S. law (e.g., 17 U.S.C. § 107).
+// AI & Educational Reuse: AI modifications for learning are allowed under fair use precedents (e.g., Sony v. Universal, 1984).
+// TradingView Rules: Complies with platform guidelines; federal laws supersede any conflicts.
+// Risk Warning: Trading involves financial risk. Past performance ≠ future results. Rubik's Algo assumes no liability.
+
+// © 2025 Rubik's Algo. All rights reserved. Built with contributions from open-source Pine Script community and AI assistance (e.g., Grok). Special thanks to StupidBitcoin
+// and referenced creators.
