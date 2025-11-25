@@ -1,0 +1,82 @@
+//@version=5
+indicator("Professional BOS Indicator", overlay=true, shorttitle="BOS Pro")
+
+// ============================
+// SIMPLE INPUTS
+// ============================
+risk_reward = input.float(2.0, "Risk/Reward Ratio", minval=1.0, maxval=5.0)
+bos_lookback = input.int(20, "BOS Lookback Period")
+
+// ============================
+// CORE CONDITIONS
+// ============================
+// 1. Break of Structure
+bos_bullish = high > ta.highest(high[1], bos_lookback)
+bos_bearish = low < ta.lowest(low[1], bos_lookback)
+
+// 2. Simple Retracement to EMA
+retrace_ema = ta.ema(close, 21)
+bullish_retrace = low <= retrace_ema and close > retrace_ema
+bearish_retrace = high >= retrace_ema and close < retrace_ema
+
+// 3. Volume Confirmation
+volume_avg = ta.sma(volume, 20)
+volume_confirm = volume > volume_avg
+
+// ============================
+// CLEAN ENTRY SIGNALS
+// ============================
+long_signal = bos_bullish and bullish_retrace and volume_confirm
+short_signal = bos_bearish and bearish_retrace and volume_confirm
+
+// ============================
+// RISK MANAGEMENT LEVELS
+// ============================
+// Calculate TP/SL levels for display
+long_stop = ta.lowest(low, 5)
+short_stop = ta.highest(high, 5)
+
+long_tp = close + (math.abs(close - long_stop) * risk_reward)
+short_tp = close - (math.abs(close - short_stop) * risk_reward)
+
+// ============================
+// VISUALIZATION
+// ============================
+// Plot EMA
+plot(retrace_ema, "Retracement EMA", color=color.orange, linewidth=2)
+
+// Plot entry signals with different colors for better visibility
+plotshape(long_signal, "Long Entry", shape.triangleup, 
+          location.belowbar, color=color.new(color.green, 0), 
+          size=size.normal, text="LONG")
+
+plotshape(short_signal, "Short Entry", shape.triangledown, 
+          location.abovebar, color=color.new(color.red, 0), 
+          size=size.normal, text="SHORT")
+
+// Plot potential stop levels when signals occur
+plotshape(long_signal ? long_stop : na, "Long Stop", 
+          shape.xcross, location.absolute, color=color.new(color.red, 0), 
+          size=size.small)
+
+plotshape(short_signal ? short_stop : na, "Short Stop", 
+          shape.xcross, location.absolute, color=color.new(color.red, 0), 
+          size=size.small)
+
+// Plot potential TP levels when signals occur  
+plotshape(long_signal ? long_tp : na, "Long TP", 
+          shape.flag, location.absolute, color=color.new(color.green, 0), 
+          size=size.small)
+
+plotshape(short_signal ? short_tp : na, "Short TP", 
+          shape.flag, location.absolute, color=color.new(color.green, 0), 
+          size=size.small)
+
+// Highlight the BOS bars
+bgcolor(bos_bullish ? color.new(color.green, 90) : bos_bearish ? color.new(color.red, 90) : na)
+
+// ============================
+// ALERTS
+// ============================
+alertcondition(long_signal, "Bullish BOS Entry", "BOS Long Signal on {{ticker}}")
+alertcondition(short_signal, "Bearish BOS Entry", "BOS Short Signal on {{ticker}}")

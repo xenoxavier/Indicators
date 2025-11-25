@@ -1,0 +1,117 @@
+//@version=5
+indicator("OBO-TOBO Head & Shoulders (H&S) Pattern Hunter", overlay=true, max_lines_count=100, max_labels_count=100, max_polylines_count=100)
+
+// --- AYARLAR ---
+length = input.int(2, title="Hassasiyet (Pivot)", minval=2)
+lineThick = input.int(2, title="Çizgi Kalınlığı", minval=1, maxval=4)
+showNeckline = input.bool(true, title="Kırılım Çizgisini Göster")
+
+// Renkler
+bullColor = input.color(color.green, title="TOBO (Yükseliş) Rengi")
+bearColor = input.color(color.red, title="OBO (Düşüş) Rengi")
+
+// --- HAFIZA (ÇİZİM OBJELERİ) ---
+// Çizimleri saklamak için değişkenler (Eskileri silmek için lazım)
+var polyline bearPoly = na, var label bearLbl = na, var line bearLine = na
+var polyline bullPoly = na, var label bullLbl = na, var line bullLine = na
+
+// Pivot Hafızası
+var pivotArray = array.new<chart.point>()
+ph = ta.pivothigh(high, length, length)
+pl = ta.pivotlow(low, length, length)
+
+// --- PİVOTLARI GÜNCELLE ---
+if not na(ph)
+    array.unshift(pivotArray, chart.point.from_time(time[length], ph))
+    if array.size(pivotArray) > 15
+        array.pop(pivotArray)
+
+if not na(pl)
+    array.unshift(pivotArray, chart.point.from_time(time[length], pl))
+    if array.size(pivotArray) > 15
+        array.pop(pivotArray)
+
+// --- YARDIMCI FONKSİYON ---
+f_similar(v1, v2, tol) =>
+    math.abs(v1 - v2) < (math.max(v1, v2) * tol / 100)
+
+// --- TARAMA VE ÇİZİM ---
+bool newPivot = not na(ph) or not na(pl)
+
+if newPivot and array.size(pivotArray) >= 6
+    // P0(En Yeni) ... P5(En Eski)
+    p0 = array.get(pivotArray, 0)
+    p1 = array.get(pivotArray, 1)
+    p2 = array.get(pivotArray, 2)
+    p3 = array.get(pivotArray, 3)
+    p4 = array.get(pivotArray, 4)
+    p5 = array.get(pivotArray, 5)
+    
+    // --- OBO (DÜŞÜŞ) KONTROLÜ ---
+    isOBO = false
+    // P2(Baş) P0 ve P4(Omuzlar)'dan yüksek mi?
+    if p2.price > p0.price and p2.price > p4.price
+        // P1 ve P3(Boyunlar) P0 ve P4(Omuzlar)'dan ve P2(Baş)'tan düşük mü?
+        if p1.price < p0.price and p1.price < p2.price and p3.price < p4.price and p3.price < p2.price
+            // Omuzlar simetrik mi? (%15 tolerans)
+            if f_similar(p0.price, p4.price, 15)
+                isOBO := true
+
+    if isOBO
+        // --- ESKİ ÇİZİMLERİ SİL (TEMİZLİK) ---
+        if not na(bearPoly)
+            polyline.delete(bearPoly)
+        if not na(bearLbl)
+            label.delete(bearLbl)
+        if not na(bearLine)
+            line.delete(bearLine)
+            
+        // --- YENİ ÇİZİM YAP ---
+        projectedTime = p0.time + (p1.time - p2.time)
+        projectedPrice = p1.price
+        
+        drawPoints = array.new<chart.point>()
+        array.push(drawPoints, p5), array.push(drawPoints, p4), array.push(drawPoints, p3)
+        array.push(drawPoints, p2), array.push(drawPoints, p1), array.push(drawPoints, p0)
+        array.push(drawPoints, chart.point.from_time(projectedTime, projectedPrice))
+        
+        // Objeleri değişkenlere ata
+        bearPoly := polyline.new(drawPoints, xloc=xloc.bar_time, line_color=bearColor, line_width=lineThick)
+        bearLbl := label.new(p2.time, p2.price, "OBO", xloc=xloc.bar_time, color=bearColor, style=label.style_label_down, textcolor=color.white, size=size.small)
+        
+        if showNeckline
+            // Kırılım çizgisi (Kısa ve temiz)
+            bearLine := line.new(p3.time, p3.price, projectedTime, projectedPrice, xloc=xloc.bar_time, color=color.blue, style=line.style_dashed)
+
+    // --- TOBO (YÜKSELİŞ) KONTROLÜ ---
+    isTOBO = false
+    // Baş en düşük, boyunlar yüksek
+    if p2.price < p0.price and p2.price < p4.price
+        if p1.price > p0.price and p1.price > p2.price and p3.price > p4.price and p3.price > p2.price
+            if f_similar(p0.price, p4.price, 15)
+                isTOBO := true
+                
+    if isTOBO
+        // --- ESKİ ÇİZİMLERİ SİL (TEMİZLİK) ---
+        if not na(bullPoly)
+            polyline.delete(bullPoly)
+        if not na(bullLbl)
+            label.delete(bullLbl)
+        if not na(bullLine)
+            line.delete(bullLine)
+
+        // --- YENİ ÇİZİM YAP ---
+        projectedTimeW = p0.time + (p1.time - p2.time)
+        projectedPriceW = p1.price
+        
+        drawPointsW = array.new<chart.point>()
+        array.push(drawPointsW, p5), array.push(drawPointsW, p4), array.push(drawPointsW, p3)
+        array.push(drawPointsW, p2), array.push(drawPointsW, p1), array.push(drawPointsW, p0)
+        array.push(drawPointsW, chart.point.from_time(projectedTimeW, projectedPriceW))
+        
+        // Objeleri değişkenlere ata
+        bullPoly := polyline.new(drawPointsW, xloc=xloc.bar_time, line_color=bullColor, line_width=lineThick)
+        bullLbl := label.new(p2.time, p2.price, "TOBO", xloc=xloc.bar_time, color=bullColor, style=label.style_label_up, textcolor=color.white, size=size.small)
+
+        if showNeckline
+            bullLine := line.new(p3.time, p3.price, projectedTimeW, projectedPriceW, xloc=xloc.bar_time, color=color.blue, style=line.style_dashed)

@@ -1,0 +1,149 @@
+//@version=5
+indicator("Advanced Price Ranges ICT — no-local-plot", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ── Inputs
+rangePtsInput = input.float(100.0, "Range Size", step=0.1, tooltip="Range size in points (or pips if Forex Mode is enabled).")
+isForexMode   = input.bool(false, "Forex Mode", tooltip="If ON, 'Range Size' is interpreted in pips (0.0001, or 0.01 for JPY quotes).")
+
+showQuarters  = input.bool(true,  "Show Quarters (25% & 75%)")
+showMid       = input.bool(true,  "Show 50%")
+showHiLo      = input.bool(true,  "Show Range High/Low")
+
+colLow        = input.color(color.red,    "Color Range Low")
+colHigh       = input.color(color.green,  "Color Range High")
+colMid        = input.color(color.orange, "Color for 50%")
+colQuarter    = input.color(color.blue,   "Color for 25% and 75%)")
+
+hiLoWidth     = input.int(2, "Range High/Low Line Width", minval=1, maxval=5)
+otherWidth    = input.int(1, "Line Width (Mid/Quarters)", minval=1, maxval=5)
+
+showLabels    = input.bool(true, "Show Right-Edge Labels")
+lblTextColor  = input.color(color.white, "Text Color")
+
+rangesAround  = input.int(1, "Extra Ranges Above/Below", minval=0, maxval=5, tooltip="0 = only the active range. 1 = one above & below, etc.")
+
+// ── Helpers
+var float pip = 0.0001
+pip := (syminfo.type == "forex" and str.contains(syminfo.currency, "JPY")) ? 0.01 : 0.0001
+
+// Effective range size in price units (avoid reserved name 'range')
+rng = isForexMode ? rangePtsInput * pip : rangePtsInput
+rng := math.max(rng, syminfo.mintick)
+
+// Anchor to the active block that contains current close
+blockBase = math.floor(close / rng) * rng
+
+// ── Storage for line objects (one set per visible block)
+var int blocksN = 0
+var line[] lowL  = array.new_line()
+var line[] highL = array.new_line()
+var line[] midL  = array.new_line()
+var line[] q25L  = array.new_line()
+var line[] q75L  = array.new_line()
+
+// ******* UPDATED HERE → extend=extend.both *******
+f_newHorizLine() =>
+    l = line.new(bar_index - 1, close, bar_index, close, extend=extend.both)
+    l
+// ************************************************
+
+f_ensureCapacity(_need) =>
+    // create (or trim) arrays to exactly _need elements
+    while array.size(lowL) < _need
+        array.push(lowL,  f_newHorizLine())
+        array.push(highL, f_newHorizLine())
+        array.push(midL,  f_newHorizLine())
+        array.push(q25L,  f_newHorizLine())
+        array.push(q75L,  f_newHorizLine())
+    // If user decreased rangesAround, trim extras
+    while array.size(lowL) > _need
+        line.delete(array.pop(lowL))
+        line.delete(array.pop(highL))
+        line.delete(array.pop(midL))
+        line.delete(array.pop(q25L))
+        line.delete(array.pop(q75L))
+
+// number of blocks we draw each bar
+blocksWanted = 2 * rangesAround + 1
+if blocksWanted != blocksN or barstate.isfirst
+    f_ensureCapacity(blocksWanted)
+    blocksN := blocksWanted
+
+// ── Update lines each bar
+// Visual helpers for hiding by alpha when toggles are off
+visColor(_c, _show) => _show ? _c : color.new(_c, 100)
+
+for i = 0 to blocksN - 1
+    b = i - rangesAround                        // -N..0..+N
+    blockLow  = blockBase + (b * rng)
+    blockHigh = blockLow + rng
+    blockMid  = blockLow + rng * 0.5
+    q25       = blockLow + rng * 0.25
+    q75       = blockLow + rng * 0.75
+
+    // Fetch this block's line objects
+    lLow  = array.get(lowL,  i)
+    lHigh = array.get(highL, i)
+    lMid  = array.get(midL,  i)
+    lQ25  = array.get(q25L,  i)
+    lQ75  = array.get(q75L,  i)
+
+    // Move lines to current bar (horizontal step updated every bar)
+    line.set_xy1(lLow,  bar_index - 1, blockLow)
+    line.set_xy2(lLow,  bar_index,     blockLow)
+    line.set_xy1(lHigh, bar_index - 1, blockHigh)
+    line.set_xy2(lHigh, bar_index,     blockHigh)
+    line.set_xy1(lMid,  bar_index - 1, blockMid)
+    line.set_xy2(lMid,  bar_index,     blockMid)
+    line.set_xy1(lQ25,  bar_index - 1, q25)
+    line.set_xy2(lQ25,  bar_index,     q25)
+    line.set_xy1(lQ75,  bar_index - 1, q75)
+    line.set_xy2(lQ75,  bar_index,     q75)
+
+    // Style & visibility
+    line.set_color(lLow,  visColor(colLow,     showHiLo))
+    line.set_width(lLow,  hiLoWidth)
+    line.set_color(lHigh, visColor(colHigh,    showHiLo))
+    line.set_width(lHigh, hiLoWidth)
+
+    line.set_color(lMid,  visColor(colMid,     showMid))
+    line.set_width(lMid,  otherWidth)
+
+    line.set_color(lQ25,  visColor(colQuarter, showQuarters))
+    line.set_width(lQ25,  otherWidth)
+    line.set_color(lQ75,  visColor(colQuarter, showQuarters))
+    line.set_width(lQ75,  otherWidth)
+
+// ── Labels at the right edge (last bar only)
+var label[] lbls = array.new<label>(0)
+f_label(_price, _txt, _color) =>
+    if barstate.islast and showLabels
+        if array.size(lbls) > 60
+            for _ = 0 to 29
+                l = array.shift(lbls)
+                label.delete(l)
+        lnew = label.new(bar_index, _price, _txt, textcolor=lblTextColor, color=color.new(_color, 85), style=label.style_label_right)
+        array.push(lbls, lnew)
+
+if barstate.islast
+    for i = 0 to blocksN - 1
+        b = i - rangesAround
+        bl = blockBase + (b * rng)
+        bh = bl + rng
+        bm = bl + rng * 0.5
+        q1 = bl + rng * 0.25
+        q3 = bl + rng * 0.75
+
+        if showHiLo
+            f_label(bl, "Low\n"  + str.tostring(bl, format.mintick), colLow)
+            f_label(bh, "High\n" + str.tostring(bh, format.mintick), colHigh)
+        if showMid
+            f_label(bm, "50%\n" + str.tostring(bm, format.mintick), colMid)
+        if showQuarters
+            f_label(q1, "25%\n" + str.tostring(q1, format.mintick), colQuarter)
+            f_label(q3, "75%\n" + str.tostring(q3, format.mintick), colQuarter)
+
+// ── Alerts
+alertcondition(ta.cross(close, blockBase),                "Cross Range Low",  "Price crossed the active range LOW")
+alertcondition(ta.cross(close, blockBase + rng),          "Cross Range High", "Price crossed the active range HIGH")
+alertcondition(showMid and ta.cross(close, blockBase + rng * 0.5), "Cross 50%", "Price crossed the 50% level")

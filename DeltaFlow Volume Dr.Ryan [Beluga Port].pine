@@ -1,0 +1,158 @@
+// This work is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © BigBeluga (modified: pinned to last bar + bar-scaled width, int x-coords)
+
+//@version=6
+indicator("DeltaFlow Volume Profile [BigBeluga] — pinned int", overlay=true, max_boxes_count=500)
+plot(na)
+
+// ── Inputs
+lookBack      = input.int(200, "LookBack")
+binsAmount    = input.int(30, "Bins", maxval=100, minval=10)
+offsetBars    = input.int(2, "Right offset (bars)")
+maxWidthBars  = input.int(3, "Max width (bars)", minval=1, maxval=50, group="Features")
+
+deltaHeatMap  = input.bool(true,  "Delta Heat Map", group="Features")
+deltaDisplay  = input.bool(true,  "Delta Label",    group="Features")
+volumeBars    = input.bool(true,  "Split Bull/Bear",group="Features")
+pocDisplay    = input.bool(true,  "", inline="poc", group="Features")
+pocColor      = input.color(color.rgb(0,183,255), "PoC Color", inline="poc", group="Features")
+
+bullcolor     = input.color(color.teal, "Bull/Bear Colors", inline="vol")
+bearcolor     = input.color(color.rgb(230,150,30), "",       inline="vol")
+
+// ── Data struct
+type vp_
+    array<float> total
+    array<float> bear
+    array<float> bull
+
+vp = vp_.new(array.new<float>(binsAmount, 0.), array.new<float>(binsAmount, 0.), array.new<float>(binsAmount, 0.))
+
+var boxes = array.new<box>()
+var rng   = array.new<float>()
+
+if barstate.islast
+    // Clear prior drawings and temp arrays
+    for b in boxes
+        b.delete()
+    array.clear(boxes)
+    array.clear(rng)
+
+    // Build price range
+    for i = 0 to lookBack
+        array.push(rng, high[i])
+        array.push(rng, low[i])
+
+    top  = array.max(rng)
+    bot  = array.min(rng)
+    step = (top - bot) / binsAmount
+
+    // Reset bins
+    for k = 0 to binsAmount - 1
+        vp.total.set(k, 0)
+        vp.bear.set(k, 0)
+        vp.bull.set(k, 0)
+
+    // Aggregate into bins
+    for i = 0 to lookBack
+        price  = close[i]
+        voll   = volume[i]
+        isBear = close[i] < open[i]
+        for k = 0 to binsAmount - 1
+            mid = bot + step * k + step * 0.5
+            if math.abs(mid - price) <= step
+                vp.total.set(k, vp.total.get(k) + voll)
+                if isBear
+                    vp.bear.set(k, vp.bear.get(k) + voll)
+                else
+                    vp.bull.set(k, vp.bull.get(k) + voll)
+
+    maxVol = math.max(1.0, vp.total.max())
+
+    // Pin to last bar with offset
+    xRight = bar_index + offsetBars  // series int
+
+    // Draw rows
+    for k = 0 to binsAmount - 1
+        lower = bot + step * k
+        upper = lower + step
+        midY  = lower + step * 0.5
+
+        vTot  = vp.total.get(k)
+        vBull = vp.bull.get(k)
+        vBear = vp.bear.get(k)
+
+        // Widths in integer bars
+        wTotI  = int(math.max(math.round((vTot  / maxVol) * maxWidthBars), 0))
+        wBullI = int(math.max(math.round((vBull / maxVol) * maxWidthBars), 0))
+        wBearI = int(math.max(math.round((vBear / maxVol) * maxWidthBars), 0))
+
+        sizeBars = math.max(maxWidthBars, 1)
+        bullsPct = (wBullI / sizeBars) * 100.0
+        bearsPct = (wBearI / sizeBars) * 100.0
+        deltaPct = bullsPct - bearsPct
+        deltaClr = color.from_gradient(deltaPct, -30, 30, bearcolor, bullcolor)
+
+        // Declare per-row boxes
+        box m   = na
+        box p   = na
+        box body= na
+        box b1  = na
+        box b2  = na
+        box lbl = na
+
+        // Heat map behind
+        if deltaHeatMap and wTotI > 0
+            m := box.new(xRight - wTotI, upper, xRight, lower)
+            box.set_border_width(m, 0)
+            heat = (vTot / maxVol) * 100.0
+            box.set_bgcolor(m, color.from_gradient(heat, 0, 100, color.new(deltaClr, 100), color.new(deltaClr, 70)))
+            array.push(boxes, m)
+
+        // PoC frame on max bin
+        if pocDisplay and vTot == maxVol and wTotI > 0
+            p := box.new(xRight - wTotI, upper, xRight, lower)
+            box.set_bgcolor(p, na)
+            box.set_border_color(p, pocColor)
+            box.set_border_width(p, 1)
+            box.set_text(p, str.tostring(vTot, format.volume))
+            array.push(boxes, p)
+
+        // Total body
+        if wTotI > 0
+            body := box.new(xRight - wTotI, upper, xRight, lower)
+            box.set_border_color(body, chart.bg_color)
+            box.set_border_width(body, 1)
+            box.set_bgcolor(body, color.new(deltaClr, 50))
+            array.push(boxes, body)
+
+        // Split bull/bear bars
+        if volumeBars
+            if wBullI > 0
+                b1 := box.new(xRight - wBullI, midY, xRight, lower)
+                box.set_bgcolor(b1, bullcolor)
+                box.set_border_color(b1, chart.bg_color)
+                box.set_border_width(b1, 1)
+                box.set_text(b1, str.tostring(bullsPct, format.percent))
+                box.set_text_halign(b1, text.align_right)
+                array.push(boxes, b1)
+
+            if wBearI > 0
+                b2 := box.new(xRight - wBearI, upper, xRight, midY)
+                box.set_bgcolor(b2, bearcolor)
+                box.set_border_color(b2, chart.bg_color)
+                box.set_border_width(b2, 1)
+                box.set_text(b2, str.tostring(bearsPct, format.percent))
+                box.set_text_halign(b2, text.align_right)
+                array.push(boxes, b2)
+
+        // Delta label column
+        if deltaDisplay
+            lbl := box.new(xRight + 1, upper, xRight + 2, lower)
+            box.set_border_color(lbl, chart.bg_color)
+            box.set_border_width(lbl, 1)
+            box.set_bgcolor(lbl, color.new(deltaClr, 80))
+            box.set_text(lbl, "Δ " + str.tostring(deltaPct, format.percent))
+            box.set_text_color(lbl, deltaClr)
+            array.push(boxes, lbl)

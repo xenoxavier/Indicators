@@ -1,0 +1,64 @@
+//@version=6
+indicator("Filter Ribbon", shorttitle="Filter Ribbon", overlay=true, max_labels_count=500)
+
+//────────────────────────────────────────
+// INPUTS
+//────────────────────────────────────────
+group_calc   = "Calculation Parameters"
+group_visual = "Visualization Settings"
+
+n       = input.int(12,  "Lookback Period",      minval=2,  group=group_calc)
+p       = input.int(90,  "Range Tolerance (%)",  minval=0, maxval=100, group=group_calc)
+src     = input.source(close, "Regression Source", group=group_calc)
+lr_len  = input.int(90, "Linear Regression Length", minval=1, group=group_calc)
+
+col_bull    = input.color(#00ffbb, "Bull Ribbon Color", group=group_visual)
+col_bear    = input.color(#ff1100, "Bear Ribbon Color", group=group_visual)
+
+//────────────────────────────────────────
+// CALCULATIONS
+//────────────────────────────────────────
+lr = ta.linreg(src, lr_len, 0)
+
+var trend = 0
+trend := 0
+
+for i = 0 to n - 2
+    for j = i + 1 to n - 1
+        trend += lr[i] > lr[j] ? 1 : lr[i] < lr[j] ? -1 : 0
+
+total_pairs = (n * (n - 1)) / 2
+threshold   = total_pairs * (p / 100)
+
+state =
+     trend >  threshold ?  1 :
+     trend < -threshold ? -1 : 0
+
+intensity = math.abs(trend) / total_pairs  // 0~1
+
+//────────────────────────────────────────
+// HEAT RIBBON (얇은 밴드 표시)
+//────────────────────────────────────────
+
+// intensity 기반 투명도
+alpha = 90 - int(intensity * 70)    // 약 → 강 (투명 → 진함)
+ribbon_col = color.new(state == 1 ? col_bull : col_bear, alpha)
+
+// 밴드 두께
+offset = ta.atr(14) * 0.10
+
+// 위쪽 밴드 / 아래쪽 밴드 형식
+ribbon_top = lr + offset
+ribbon_bottom = lr - offset
+
+// 밴드 플로팅 라인
+plot(ribbon_top,    color=ribbon_col, style=plot.style_line, linewidth=3)
+plot(ribbon_bottom, color=ribbon_col, style=plot.style_line, linewidth=3)
+
+// 그 사이 채우기 (filling으로 리본 생성)
+fill(plot(ribbon_top), plot(ribbon_bottom), color=ribbon_col)
+
+//────────────────────────────────────────
+// OPTIONALLY LR LINE
+//────────────────────────────────────────
+plot(lr, color=color.new(color.white, 60), linewidth=1)

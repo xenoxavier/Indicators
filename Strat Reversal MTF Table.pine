@@ -1,0 +1,227 @@
+//@version=6
+indicator("Strat Reversal MTF Table", shorttitle="Strat MTF", overlay=true)
+
+// ============================================================================
+// USER INPUTS - TIMEFRAMES
+// ============================================================================
+tf1 = input.timeframe("1", "Timeframe 1", group="Timeframes")
+tf2 = input.timeframe("5", "Timeframe 2", group="Timeframes")
+tf3 = input.timeframe("15", "Timeframe 3", group="Timeframes")
+tf4 = input.timeframe("30", "Timeframe 4", group="Timeframes")
+tf5 = input.timeframe("60", "Timeframe 5", group="Timeframes")
+tf6 = input.timeframe("360", "Timeframe 6", group="Timeframes")
+tf7 = input.timeframe("D", "Timeframe 7", group="Timeframes")
+
+// Alert/Confirm Mode
+i_alert_mode = input.string("Realtime (Wick)", options=["Realtime (Wick)","Close-Confirmed"], 
+     title="Evaluation Mode", group="Settings")
+
+// Table Settings
+table_position = input.string("Bottom Right", "Table Position", 
+     options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", 
+              "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"],
+     group="Display Settings")
+table_text_size = input.string("Small", "Text Size", 
+     options=["Tiny", "Small", "Normal", "Large", "Huge"], group="Display Settings")
+
+// Colors
+color_bullish = input.color(color.new(color.green, 0), "Bullish Color", group="Colors")
+color_bearish = input.color(color.new(color.red, 0), "Bearish Color", group="Colors")
+color_neutral = input.color(color.new(color.gray, 60), "Neutral Color", group="Colors")
+color_bg = input.color(color.new(color.black, 20), "Table Background", group="Colors")
+color_text = input.color(color.white, "Text Color", group="Colors")
+
+// ============================================================================
+// STRAT REVERSAL DETECTION - EXACT LOGIC FROM YOUR INDICATOR
+// ============================================================================
+
+detect_reversals() =>
+    useClose   = i_alert_mode == "Close-Confirmed"
+    enoughBars = bar_index > 2
+    isCloseBar = barstate.isconfirmed
+    
+    // Strat bar types
+    ones     = (low >= low[1] and high <= high[1])
+    twos     = (low < low[1] or high > high[1]) and not (low < low[1] and high > high[1])
+    two_up   = (high > high[1]) and not (low < low[1] and high > high[1])
+    two_down = (low  < low[1]) and not (low < low[1] and high > high[1])
+    threes   = (low < low[1] and high > high[1])
+    
+    // Break logic
+    brokeUp_base   = useClose ? (close > high[1] and isCloseBar) : (high > high[1])
+    brokeDown_base = useClose ? (close < low[1]  and isCloseBar) : (low  < low[1])
+    
+    // Debounce for 2-1-2 and 3-1-2
+    newBreakUp   = brokeUp_base   and not (useClose ? (close[1] > high[2]) : (high[1] > high[2]))
+    newBreakDown = brokeDown_base and not (useClose ? (close[1] < low[2])  : (low[1]  < low[2]))
+    
+    // Direct breaks for 1-3-2 and 3-2-2
+    upBreak   = brokeUp_base
+    downBreak = brokeDown_base
+    
+    // Bullish reversals
+    blr_212 = enoughBars and two_down[2] and ones[1] and newBreakUp
+    blr_312 = enoughBars and threes[2]   and ones[1] and newBreakUp
+    blr_132 = enoughBars and ones[2]     and threes[1] and upBreak
+    blr_322 = enoughBars and threes[2]   and two_down[1] and upBreak
+    
+    // Bearish reversals
+    brr_212 = enoughBars and two_up[2]   and ones[1] and newBreakDown
+    brr_312 = enoughBars and threes[2]   and ones[1] and newBreakDown
+    brr_132 = enoughBars and ones[2]     and threes[1] and downBreak
+    brr_322 = enoughBars and threes[2]   and two_up[1] and downBreak
+    
+    any_bullish = blr_212 or blr_312 or blr_132 or blr_322
+    any_bearish = brr_212 or brr_312 or brr_132 or brr_322
+    
+    // Trigger prices
+    trigger_price = any_bullish ? high[1] : any_bearish ? low[1] : na
+    
+    [any_bullish, any_bearish, blr_212, blr_312, blr_132, blr_322, 
+     brr_212, brr_312, brr_132, brr_322, trigger_price]
+
+// ============================================================================
+// MULTI-TIMEFRAME SECURITY CALLS
+// ============================================================================
+
+[bull1, bear1, blr212_1, blr312_1, blr132_1, blr322_1, brr212_1, brr312_1, brr132_1, brr322_1, trig1] = 
+     request.security(syminfo.tickerid, tf1, detect_reversals())
+
+[bull2, bear2, blr212_2, blr312_2, blr132_2, blr322_2, brr212_2, brr312_2, brr132_2, brr322_2, trig2] = 
+     request.security(syminfo.tickerid, tf2, detect_reversals())
+
+[bull3, bear3, blr212_3, blr312_3, blr132_3, blr322_3, brr212_3, brr312_3, brr132_3, brr322_3, trig3] = 
+     request.security(syminfo.tickerid, tf3, detect_reversals())
+
+[bull4, bear4, blr212_4, blr312_4, blr132_4, blr322_4, brr212_4, brr312_4, brr132_4, brr322_4, trig4] = 
+     request.security(syminfo.tickerid, tf4, detect_reversals())
+
+[bull5, bear5, blr212_5, blr312_5, blr132_5, blr322_5, brr212_5, brr312_5, brr132_5, brr322_5, trig5] = 
+     request.security(syminfo.tickerid, tf5, detect_reversals())
+
+[bull6, bear6, blr212_6, blr312_6, blr132_6, blr322_6, brr212_6, brr312_6, brr132_6, brr322_6, trig6] = 
+     request.security(syminfo.tickerid, tf6, detect_reversals())
+
+[bull7, bear7, blr212_7, blr312_7, blr132_7, blr322_7, brr212_7, brr312_7, brr132_7, brr322_7, trig7] = 
+     request.security(syminfo.tickerid, tf7, detect_reversals())
+
+// ============================================================================
+// TABLE CONSTRUCTION
+// ============================================================================
+
+get_table_position(pos) =>
+    pos == "Top Left" ? position.top_left :
+     pos == "Top Center" ? position.top_center :
+     pos == "Top Right" ? position.top_right :
+     pos == "Middle Left" ? position.middle_left :
+     pos == "Middle Center" ? position.middle_center :
+     pos == "Middle Right" ? position.middle_right :
+     pos == "Bottom Left" ? position.bottom_left :
+     pos == "Bottom Center" ? position.bottom_center :
+     position.bottom_right
+
+get_text_size(sz) =>
+    sz == "Tiny" ? size.tiny :
+     sz == "Small" ? size.small :
+     sz == "Normal" ? size.normal :
+     sz == "Large" ? size.large :
+     size.huge
+
+get_cell_color(bullish, bearish) =>
+    bullish ? color_bullish : bearish ? color_bearish : color_neutral
+
+get_reversal_text(bull, bear, blr212, blr312, blr132, blr322, brr212, brr312, brr132, brr322, trigger) =>
+    string display_text = ""
+    if bull
+        if blr212
+            display_text += "2-1-2 Bull"
+        if blr312
+            display_text += "3-1-2 Bull"
+        if blr132
+            display_text += "1-3-2 Bull"
+        if blr322
+            display_text += "3-2-2 Bull"
+        if not na(trigger)
+            display_text += "\n@ " + str.tostring(trigger, format.mintick)
+    else if bear
+        if brr212
+            display_text += "2-1-2 Bear"
+        if brr312
+            display_text += "3-1-2 Bear"
+        if brr132
+            display_text += "1-3-2 Bear"
+        if brr322
+            display_text += "3-2-2 Bear"
+        if not na(trigger)
+            display_text += "\n@ " + str.tostring(trigger, format.mintick)
+    else
+        display_text := "-"
+    display_text
+
+if barstate.islast
+    var table tbl = table.new(get_table_position(table_position), 2, 8, 
+         bgcolor=color_bg, border_width=2, border_color=color.gray)
+    
+    txt_size = get_text_size(table_text_size)
+    
+    // Header
+    table.cell(tbl, 0, 0, "Timeframe", text_color=color_text, text_size=txt_size, 
+         bgcolor=color.new(color.gray, 40))
+    table.cell(tbl, 1, 0, "Reversal Status", text_color=color_text, text_size=txt_size, 
+         bgcolor=color.new(color.gray, 40))
+    
+    // TF1
+    table.cell(tbl, 0, 1, tf1, text_color=color_text, text_size=txt_size)
+    table.cell(tbl, 1, 1, get_reversal_text(bull1, bear1, blr212_1, blr312_1, blr132_1, 
+         blr322_1, brr212_1, brr312_1, brr132_1, brr322_1, trig1), 
+         text_color=color_text, text_size=txt_size, bgcolor=get_cell_color(bull1, bear1))
+    
+    // TF2
+    table.cell(tbl, 0, 2, tf2, text_color=color_text, text_size=txt_size)
+    table.cell(tbl, 1, 2, get_reversal_text(bull2, bear2, blr212_2, blr312_2, blr132_2, 
+         blr322_2, brr212_2, brr312_2, brr132_2, brr322_2, trig2), 
+         text_color=color_text, text_size=txt_size, bgcolor=get_cell_color(bull2, bear2))
+    
+    // TF3
+    table.cell(tbl, 0, 3, tf3, text_color=color_text, text_size=txt_size)
+    table.cell(tbl, 1, 3, get_reversal_text(bull3, bear3, blr212_3, blr312_3, blr132_3, 
+         blr322_3, brr212_3, brr312_3, brr132_3, brr322_3, trig3), 
+         text_color=color_text, text_size=txt_size, bgcolor=get_cell_color(bull3, bear3))
+    
+    // TF4
+    table.cell(tbl, 0, 4, tf4, text_color=color_text, text_size=txt_size)
+    table.cell(tbl, 1, 4, get_reversal_text(bull4, bear4, blr212_4, blr312_4, blr132_4, 
+         blr322_4, brr212_4, brr312_4, brr132_4, brr322_4, trig4), 
+         text_color=color_text, text_size=txt_size, bgcolor=get_cell_color(bull4, bear4))
+    
+    // TF5
+    table.cell(tbl, 0, 5, tf5, text_color=color_text, text_size=txt_size)
+    table.cell(tbl, 1, 5, get_reversal_text(bull5, bear5, blr212_5, blr312_5, blr132_5, 
+         blr322_5, brr212_5, brr312_5, brr132_5, brr322_5, trig5), 
+         text_color=color_text, text_size=txt_size, bgcolor=get_cell_color(bull5, bear5))
+    
+    // TF6
+    table.cell(tbl, 0, 6, tf6, text_color=color_text, text_size=txt_size)
+    table.cell(tbl, 1, 6, get_reversal_text(bull6, bear6, blr212_6, blr312_6, blr132_6, 
+         blr322_6, brr212_6, brr312_6, brr132_6, brr322_6, trig6), 
+         text_color=color_text, text_size=txt_size, bgcolor=get_cell_color(bull6, bear6))
+    
+    // TF7
+    table.cell(tbl, 0, 7, tf7, text_color=color_text, text_size=txt_size)
+    table.cell(tbl, 1, 7, get_reversal_text(bull7, bear7, blr212_7, blr312_7, blr132_7, 
+         blr322_7, brr212_7, brr312_7, brr132_7, brr322_7, trig7), 
+         text_color=color_text, text_size=txt_size, bgcolor=get_cell_color(bull7, bear7))
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+alertcondition(bull1 or bear1, title="TF1 Reversal", message="Strat Reversal on TF1")
+alertcondition(bull2 or bear2, title="TF2 Reversal", message="Strat Reversal on TF2")
+alertcondition(bull3 or bear3, title="TF3 Reversal", message="Strat Reversal on TF3")
+alertcondition(bull4 or bear4, title="TF4 Reversal", message="Strat Reversal on TF4")
+alertcondition(bull5 or bear5, title="TF5 Reversal", message="Strat Reversal on TF5")
+alertcondition(bull6 or bear6, title="TF6 Reversal", message="Strat Reversal on TF6")
+alertcondition(bull7 or bear7, title="TF7 Reversal", message="Strat Reversal on TF7")
+alertcondition(bull1 or bear1 or bull2 or bear2 or bull3 or bear3 or bull4 or bear4 or 
+     bull5 or bear5 or bull6 or bear6 or bull7 or bear7, 
+     title="Any MTF Reversal", message="Multi-Timeframe Strat Reversal Detected")

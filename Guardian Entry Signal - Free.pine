@@ -1,0 +1,42 @@
+//@version=5
+indicator("Guardian Entry Signal - Free", shorttitle="Guardian Buy", overlay=true, max_bars_back=500)
+
+// ── Inputs (you can tweak these later)
+rsiLen   = input.int(14,  "RSI Length")
+rsiOB    = input.int(70,  "RSI Overbought")
+rsiOS    = input.int(30,  "RSI Oversold")
+macdFast = input.int(12,  "MACD Fast")
+macdSlow = input.int(26,  "MACD Slow")
+macdSig  = input.int(9,   "MACD Signal")
+volMultiplier = input.float(1.5, "Volume Spike Multiplier", step=0.1)
+
+// ── Calculations
+rsi = ta.rsi(close, rsiLen)
+
+// MACD
+[macdLine, signalLine, _] = ta.macd(close, macdFast, macdSlow, macdSig)
+macdBullCross = ta.crossover(macdLine, signalLine)
+
+// Volume confirmation
+volAvg = ta.sma(volume, 20)
+volSpike = volume > volAvg * volMultiplier
+
+// ── BUY CONDITION (all must align)
+buyCondition = 
+     rsi < rsiOS and                     // oversold
+     ta.crossover(rsi, rsiOS) and        // RSI just crossed up from oversold
+     macdBullCross and                   // MACD bullish crossover
+     volSpike and                        // volume confirmation
+     close > ta.sma(close, 50)           // price above 50 SMA (trend filter)
+
+// ── Plot arrows
+plotshape(buyCondition, title="BUY ENTRY", location=location.belowbar, 
+          color=color.new(color.lime, 0), style=shape.triangleup, size=size.large, text="BUY")
+
+// Optional exit (red arrow when RSI gets overbought)
+sellCondition = ta.crossunder(rsi, rsiOB)
+plotshape(sellCondition, title="Possible Exit", location=location.abovebar, 
+          color=color.red, style=shape.triangledown, size=size.small, text="EXIT")
+
+// Alerts – right-click chart → Add Alert → “Guardian Entry Signal - Free” → “Once per bar close”
+alertcondition(buyCondition, title="Guardian BUY Signal", message="BUY signal on {{ticker}} at {{close}}")

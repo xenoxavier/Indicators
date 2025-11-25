@@ -1,0 +1,44 @@
+//@version=6
+indicator("Filte Ichimoku", shorttitle="Filte Ichimoku", overlay=true)
+
+// INPUTS
+tenkan_len  = input.int(18,  "Tenkan Sen Length 9,18")
+kijun_len   = input.int(52, "Kijun Sen Length 26,52")
+senkou_len  = input.int(104, "Senkou Span 52, 104")
+
+col_bull = input.color(#00c04a, "Bull Color")
+col_bear = input.color(#ff1100, "Bear Color")
+
+// ICHIMOKU CALC
+tenkan = (ta.highest(high, tenkan_len) + ta.lowest(low, tenkan_len)) / 2
+kijun  = (ta.highest(high, kijun_len)  + ta.lowest(low, kijun_len)) / 2
+
+senkouA = (tenkan + kijun) / 2
+senkouB = (ta.highest(high, senkou_len) + ta.lowest(low, senkou_len)) / 2
+
+// TREND INTENSITY (Span A vs B)
+trend_raw = senkouA - senkouB
+intensity = math.min(math.max(math.abs(trend_raw) / (ta.atr(14)*2), 0), 1)
+
+// COLOR & ALPHA
+alpha = 90 - int(intensity * 70)
+
+cloud_color =
+     senkouA > senkouB ? color.new(col_bull, alpha) :
+     senkouA < senkouB ? color.new(col_bear, alpha) :
+                         color.new(color.gray, 75)
+
+// SMOOTH (wave style)
+smoothA1 = ta.sma(senkouA, 3)
+smoothA2 = ta.sma(smoothA1, 3)
+smoothA3 = ta.sma(smoothA2, 3)
+
+smoothB1 = ta.sma(senkouB, 3)
+smoothB2 = ta.sma(smoothB1, 3)
+smoothB3 = ta.sma(smoothB2, 3)
+
+// PLOTS (forward shifted)
+pA = plot(smoothA3, offset=kijun_len, color=cloud_color, linewidth=2)
+pB = plot(smoothB3, offset=kijun_len, color=color.new(color.black, 100))
+
+fill(pA, pB, color=cloud_color)

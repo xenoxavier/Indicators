@@ -1,0 +1,37 @@
+//@version=5
+indicator("CRISTIAN CARRERA GT", shorttitle="CRISTIAN CARRERA GT", overlay=true, max_lines_count=500)
+
+// ── INPUTS ──
+fast_length   = input.int(9,   "EMA Rápida",    minval=1)
+slow_length   = input.int(21,  "EMA Lenta",     minval=1)
+trend_length  = input.int(55,  "EMA Tendencia", minval=1)
+vol_mult      = input.float(1.8, "Multiplicador Volumen", step=0.1)
+
+// ── CÁLCULOS ──
+ema_fast  = ta.ema(close, fast_length)
+ema_slow  = ta.ema(close, slow_length)
+ema_trend = ta.ema(close, trend_length)
+vol_ok    = volume > ta.sma(volume, 20) * vol_mult
+
+longSignal  = ta.crossover(ema_fast, ema_slow) and close > ema_trend and vol_ok
+shortSignal = ta.crossunder(ema_fast, ema_slow) and close < ema_trend and vol_ok
+
+// ── VISUALES ──
+plot(ema_fast,  color=#FF6B00, linewidth=2, title="EMA Rápida")
+plot(ema_slow,  color=#FFD93D, linewidth=2, title="EMA Lenta")
+plot(ema_trend, color=#9C27B0, linewidth=3, title="Tendencia GT")
+
+// Triángulos pequeños + texto claro
+plotshape(longSignal,  title="LONG",  location=location.belowbar, 
+          color=color.new(color.green, 0), style=shape.triangleup, size=size.small, text="LONG", textcolor=color.white)
+
+plotshape(shortSignal, title="SHORT", location=location.abovebar, 
+          color=color.new(color.red, 0), style=shape.triangledown, size=size.small, text="SHORT", textcolor=color.white)
+
+
+// ── ALERTAS PERFECTAS PARA CORNIX (2025) ──
+alertcondition(longSignal, title="LONG CRISTIAN CARRERA GT", 
+     message='LONG {{ticker}}\n{"symbol":"{{ticker}}","side":"buy","quantity":"100%","price":"{{close}}","reduce_only":false,"close_on_trigger":true}')
+
+alertcondition(shortSignal, title="SHORT CRISTIAN CARRERA GT", 
+     message='SHORT {{ticker}}\n{"symbol":"{{ticker}}","side":"sell","quantity":"100%","price":"{{close}}","reduce_only":false,"close_on_trigger":true}')

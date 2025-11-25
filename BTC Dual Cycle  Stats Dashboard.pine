@@ -1,0 +1,122 @@
+//@version=5
+indicator("BTC Dual Cycle: Stats Dashboard", overlay=true)
+
+// --- INPUT ---
+dropPercent = input.float(50.0, title="Soglia Crollo per Zona Rossa (%)")
+textSize = input.string(size.normal, title="Dimensione Testo Dashboard", options=[size.small, size.normal, size.large])
+
+// --- VARIABILI DI STATO ---
+var float ath = 0.0             
+var float lockedAth = 0.0       
+var bool isBearPhase = false    // false = Verde, true = Rossa
+var int phaseStartTime = 0      
+
+// --- ARRAY PER STATISTICHE (Memorizzano le durate) ---
+var greenDurations = array.new_float()
+var redDurations = array.new_float()
+
+// --- LOGICA ---
+
+// 1. Gestione ATH in fase Espansione (Verde)
+if not isBearPhase 
+    if high > ath
+        ath := high
+    if phaseStartTime == 0
+        phaseStartTime := time
+
+// Calcolo livello di crash
+crashLevel = ath * (1 - dropPercent / 100)
+
+// 2. Rilevamento CAMBIO FASE
+
+// A. Da VERDE a ROSSO (Inizio Bear/Crash)
+switchToBear = not isBearPhase and close < crashLevel
+
+if switchToBear
+    // Calcola durata fase Verde conclusa
+    greenDuration = (time - phaseStartTime) / 86400000
+    array.push(greenDurations, greenDuration) // Salva nello storico
+    
+    // Etichetta sul grafico
+    label.new(bar_index[1], high[1], 
+         text=str.tostring(math.round(greenDuration)) + " Giorni", 
+         color=color.green, 
+         textcolor=color.white, 
+         style=label.style_label_down, 
+         size=size.small)
+    
+    // Iniziamo fase Rossa
+    isBearPhase := true
+    lockedAth := ath  
+    phaseStartTime := time 
+
+// B. Da ROSSO a VERDE (Fine Recupero)
+switchToBull = isBearPhase and close >= lockedAth
+
+if switchToBull
+    // Calcola durata fase Rossa conclusa
+    redDuration = (time - phaseStartTime) / 86400000
+    array.push(redDurations, redDuration) // Salva nello storico
+    
+    // Etichetta sul grafico
+    label.new(bar_index, high, 
+         text=str.tostring(math.round(redDuration)) + " Giorni", 
+         color=color.red, 
+         textcolor=color.white, 
+         style=label.style_label_down, 
+         size=size.small)
+    
+    // Iniziamo fase Verde
+    isBearPhase := false
+    ath := high 
+    phaseStartTime := time 
+
+// --- PLOTTING ---
+
+// Sfondo
+bgcolor(isBearPhase ? color.new(color.red, 85) : color.new(color.green, 85), title="Sfondo Ciclo")
+
+// Linea Target (solo in fase rossa)
+plot(isBearPhase ? lockedAth : na, title="Target Recupero", color=color.red, style=plot.style_linebr, linewidth=2)
+
+// --- LIVE LABEL ---
+var label liveLabel = na
+label.delete(liveLabel)
+
+currentDays = (time - phaseStartTime) / 86400000
+labelColor = isBearPhase ? color.red : color.green
+
+if barstate.islast
+    liveLabel := label.new(bar_index, high, 
+         text=str.tostring(math.round(currentDays)) + " Giorni...", 
+         color=labelColor, 
+         textcolor=color.white, 
+         style=label.style_label_down, 
+         size=size.large)
+
+// --- DASHBOARD STATISTICHE ---
+
+var table statsTable = table.new(position.bottom_right, 3, 3, bgcolor=color.new(color.black, 50), border_width=1)
+
+if barstate.islast
+    // Calcoli Statistici (Solo su cicli completati)
+    avgGreen = array.size(greenDurations) > 0 ? array.avg(greenDurations) : 0.0
+    medGreen = array.size(greenDurations) > 0 ? array.median(greenDurations) : 0.0
+    
+    avgRed = array.size(redDurations) > 0 ? array.avg(redDurations) : 0.0
+    medRed = array.size(redDurations) > 0 ? array.median(redDurations) : 0.0
+
+    // Header
+    table.cell(statsTable, 0, 0, "Fase", text_color=color.white, bgcolor=color.gray, text_size=textSize)
+    table.cell(statsTable, 1, 0, "Media (gg)", text_color=color.white, bgcolor=color.gray, text_size=textSize)
+    table.cell(statsTable, 2, 0, "Mediana (gg)", text_color=color.white, bgcolor=color.gray, text_size=textSize)
+
+    // Row Verde (Espansione)
+    table.cell(statsTable, 0, 1, "Espansione (Verde)", text_color=color.green, text_size=textSize)
+    table.cell(statsTable, 1, 1, str.tostring(math.round(avgGreen)), text_color=color.white, text_size=textSize)
+    table.cell(statsTable, 2, 1, str.tostring(math.round(medGreen)), text_color=color.white, text_size=textSize)
+
+    // Row Rossa (Recupero)
+    table.cell(statsTable, 0, 2, "Recupero (Rosso)", text_color=color.red, text_size=textSize)
+    table.cell(statsTable, 1, 2, str.tostring(math.round(avgRed)), text_color=color.white, text_size=textSize)
+    table.cell(statsTable, 2, 2, str.tostring(math.round(medRed)), text_color=color.white, text_size=textSize)

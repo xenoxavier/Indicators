@@ -1,0 +1,125 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © meddymarkusvanhala
+
+//@version=6
+indicator("Universal Pivot Scanner", overlay=true, max_labels_count=100)
+
+// Universal pivot pattern detector - works on ANY source (price, RSI, MACD, volume, custom indicators)
+// Detects HH+HL (bullish retracement) and LL+LH (bearish retracement) patterns
+// No repaint - labels/alerts fire when pivot is CONFIRMED (not backdated)
+// Recommended: piv_len=1 for oscillators, 3-10 for price action
+
+// ========== INPUTS ==========
+src = input.source(close, "Source")
+piv_len = input.int(1, "Pivot Lookback", minval=1, tooltip="Bars each side to confirm pivot\nRecommended: 1 for oscillators, 3-10 for price/range")
+
+// ========== DETECT OHLC SOURCE ==========
+// Check if source is price-based (close, open, high, low, hl2, hlc3, ohlc4)
+isOHLC = src == close or src == open or src == high or src == low or 
+         src == hl2 or src == hlc3 or src == ohlc4
+
+// ========== PIVOT DETECTION (CONFIRMED) ==========
+ph = ta.pivothigh(src, piv_len, piv_len)
+pl = ta.pivotlow(src, piv_len, piv_len)
+
+isPivHigh = not na(ph)
+isPivLow = not na(pl)
+
+// ========== STATE TRACKING ==========
+var float prevHigh = na
+var float prevLow = na
+var string patt = ""
+
+// ========== CLASSIFICATION ==========
+if isPivHigh
+    val = ph
+    pivotBar = bar_index - piv_len
+    // Anchor price: use candle high for OHLC sources, otherwise use source value
+    anchorPrice = isOHLC ? high[piv_len] : val
+    
+    if na(prevHigh)
+        patt := "H"
+    else
+        patt := val > prevHigh ? "HH" : "LH"
+    prevHigh := val
+    
+    // Label at actual PIVOT bar
+    label.new(pivotBar, anchorPrice, patt + "\n" + str.tostring(val, "#.##"),
+              color=patt == "HH" ? color.new(color.lime, 30) : color.new(color.red, 30),
+              textcolor=color.white, size=size.small, style=label.style_label_down,
+              yloc=yloc.price)
+
+if isPivLow
+    val = pl
+    pivotBar = bar_index - piv_len
+    // Anchor price: use candle low for OHLC sources, otherwise use source value
+    anchorPrice = isOHLC ? low[piv_len] : val
+    
+    if na(prevLow)
+        patt := "L"
+    else
+        patt := val > prevLow ? "HL" : "LL"
+    prevLow := val
+    
+    // Label at actual PIVOT bar
+    label.new(pivotBar, anchorPrice, patt + "\n" + str.tostring(val, "#.##"),
+              color=patt == "HL" ? color.new(color.lime, 30) : color.new(color.red, 30),
+              textcolor=color.white, size=size.small, style=label.style_label_up,
+              yloc=yloc.price)
+
+// ========== TRACK PIVOTS ==========
+var arr = array.new_string(0)
+if isPivHigh or isPivLow
+    array.push(arr, patt)
+    if array.size(arr) > 10
+        array.shift(arr)
+
+// ========== PATTERN CHECK ==========
+longSig = false
+shortSig = false
+
+if array.size(arr) >= 2
+    p2 = array.get(arr, array.size(arr) - 2)
+    p1 = array.get(arr, array.size(arr) - 1)
+    longSig := p2 == "HH" and p1 == "HL"
+    shortSig := p2 == "LL" and p1 == "LH"
+
+// ========== VISUAL SIGNALS ==========
+// Backgrounds removed for cleaner display
+
+// ========== TABLE ==========
+var t = table.new(position.top_right, 2, 4, bgcolor=color.new(color.black, 20))
+if barstate.islast
+    table.cell(t, 0, 0, "PIVOT SCANNER", bgcolor=color.blue, text_color=color.white)
+    table.merge_cells(t, 0, 0, 1, 0)
+    
+    table.cell(t, 0, 1, "Lookback", text_color=color.gray, text_size=size.small)
+    table.cell(t, 1, 1, str.tostring(piv_len), text_color=color.white, text_size=size.small)
+    
+    // Last 5
+    l5 = ""
+    sz = array.size(arr)
+    if sz > 0
+        st = math.max(0, sz - 5)
+        for i = st to sz - 1
+            if i > st
+                l5 += "→"
+            l5 += array.get(arr, i)
+    else
+        l5 := "None"
+    
+    table.cell(t, 0, 2, "Last 5", text_color=color.gray, text_size=size.small)
+    table.cell(t, 1, 2, l5, text_color=color.yellow, text_size=size.small)
+    
+    // Pattern
+    ptxt = longSig ? "🟢 HH+HL" : shortSig ? "🔴 LL+LH" : "⚪ None"
+    pclr = longSig ? color.new(color.lime, 60) : 
+           shortSig ? color.new(color.red, 60) : color.new(color.gray, 80)
+    
+    table.cell(t, 0, 3, "Pattern", text_color=color.gray, text_size=size.small)
+    table.cell(t, 1, 3, ptxt, bgcolor=pclr, text_color=color.white, text_size=size.normal)
+
+// ========== ALERTS (FIRE WHEN CONFIRMED) ==========
+alertcondition(longSig, "LONG Signal", "🟢 HH+HL Pattern Confirmed!")
+alertcondition(shortSig, "SHORT Signal", "🔴 LL+LH Pattern Confirmed!")
+alertcondition(longSig or shortSig, "Any Signal", "Pattern Confirmed!")

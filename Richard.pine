@@ -1,0 +1,1276 @@
+//══════════════════════════════════════════════════════════════════════════════
+//
+// ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+//  ----------------------------------------------------------------------------
+//   SMART MONEY VOLUME MATRIX [Enhanced v3 - DIRECTION PRO] Modified Version
+
+//  ----------------------------------------------------------------------------
+//  NEW IN v3:
+//  🎯 Trend Confirmation Score (0-100) - Know exact market direction
+//  🚦 Traffic Light System - Clear Buy/Sell/Wait signals
+//  ⚠️  Fake-Out Detector - Avoid false breakouts/breakdowns
+//  📊 Enhanced Dashboard - Actionable direction & confidence
+//
+//  IMPROVEMENTS FROM v2:
+//  1. ✅ Alert System: Multi-condition alerts for all key events
+//  2. ✅ Divergence Detection: Price vs Volume divergences
+//  3. ✅ Dynamic S/R: Multiple support/resistance levels
+//  4. ✅ Order Flow: Enhanced buy/sell pressure indicators
+//  5. ✅ Performance: Optimized calculations and memory usage
+//  6. ✅ Market Structure: Break of Structure (BOS) & Change of Character (CHoCH)
+//  7. ✅ Volume Delta: Real-time cumulative delta tracking
+//  8. ✅ Smart Pivots: Automated swing high/low detection
+//  9. ✅ Buy/Sell Signals: Multi-strength signal system
+// ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
+//
+//══════════════════════════════════════════════════════════════════════════════
+
+// @version=6
+indicator("SMV Matrix PRO [Direction]", shorttitle="SMV Pro", overlay=true, max_labels_count=500, max_bars_back=500, max_lines_count=500, max_boxes_count=500, scale=scale.right)
+
+//══════════════
+//  Imports & Settings
+//══════════════
+import TradingView/ta/10 as tvta
+
+string grpMain      = "Matrix Settings"
+int    lookback_len = input.int(100, "Lookback Period", minval=10, group=grpMain)
+int    top_count    = input.int(10, "Top Rank Count", minval=1, group=grpMain)
+int    proj_len     = input.int(26, "Projection Length (Bars)", minval=1, group=grpMain)
+
+string grpVol       = "Volume Engine"
+string calc_method  = input.string("Geometry (Approx)", "Calculation Method", options = ["Geometry (Approx)", "Intrabar (Precise)"], group=grpVol)
+string ltf_input    = input.timeframe("5", "Intrabar Timeframe", group=grpVol)
+bool   show_delta   = input.bool(true, "Show Volume Delta", group=grpVol)
+bool   show_flow    = input.bool(true, "Show Order Flow Pressure", group=grpVol)
+
+string grpVis       = "Visuals"
+bool   show_table   = input.bool(true, "Show Dashboard Table", group=grpVis)
+bool   show_labels  = input.bool(true, "Show Chart Labels", group=grpVis)
+bool   show_lines   = input.bool(true, "Show Label Guide Lines", group=grpVis)
+bool   show_zones   = input.bool(true, "Show S/R Zones", group=grpVis)
+bool   show_price_line = input.bool(true, "Show Current Price Line", group=grpVis, tooltip="Shows a horizontal line at current price to help locate chart when switching coins")
+int    lbl_transp   = input.int(20, "Label Transparency", minval=0, maxval=90, group=grpVis)
+string txt_size_tbl = input.string("Small", "Table Font Size", options=["Tiny", "Small", "Normal", "Large"], group=grpVis)
+string txt_size_lbl = input.string("Small", "Chart Label Size", options=["Tiny", "Small", "Normal", "Large"], group=grpVis)
+
+string grpTrend     = "Trend Lines"
+bool   show_trend   = input.bool(true, "Show Trend Channel", group=grpTrend)
+string tr_style_in  = input.string("Dashed", "Line Style", options=["Solid", "Dashed", "Dotted"], group=grpTrend)
+int    tr_width     = input.int(2, "Line Width", minval=1, group=grpTrend)
+color  tr_col_h     = input.color(color.new(#ffcd03, 0), "High Line Color", group=grpTrend)
+color  tr_col_l     = input.color(color.new(#ffcd03, 0), "Low Line Color", group=grpTrend)
+color  tr_fill_col  = input.color(color.new(color.orange, 90), "Channel Fill Color", group=grpTrend)
+
+// NEW: Divergence Settings
+string grpDiv       = "Divergence Detection"
+bool   show_div     = input.bool(true, "Show Divergences", group=grpDiv)
+int    div_period   = input.int(14, "Pivot Period", minval=5, group=grpDiv)
+color  div_bull_col = input.color(color.new(#00E676, 20), "Bullish Divergence", group=grpDiv)
+color  div_bear_col = input.color(color.new(#ff0000, 20), "Bearish Divergence", group=grpDiv)
+
+// NEW: Market Structure
+string grpStruct    = "Market Structure"
+bool   show_struct  = input.bool(true, "Show BOS/CHoCH", group=grpStruct)
+int    struct_len   = input.int(5, "Structure Pivot Length", minval=3, group=grpStruct)
+color  bos_col      = input.color(#2962FF, "Break of Structure", group=grpStruct)
+color  choch_col    = input.color(#FF6D00, "Change of Character", group=grpStruct)
+
+// NEW: Alert Settings
+string grpAlert     = "Alert Conditions"
+bool   alert_dist   = input.bool(true, "Alert on Distribution", group=grpAlert)
+bool   alert_abs    = input.bool(true, "Alert on Absorption", group=grpAlert)
+bool   alert_zone   = input.bool(true, "Alert on Zone Touch", group=grpAlert)
+bool   alert_div    = input.bool(true, "Alert on Divergence", group=grpAlert)
+bool   alert_bos    = input.bool(true, "Alert on BOS/CHoCH", group=grpAlert)
+
+// NEW: Buy/Sell Signal Settings
+string grpSignals   = "Buy/Sell Signals"
+bool   show_signals = input.bool(true, "Show Buy/Sell Signals", group=grpSignals)
+int    signal_strength = input.int(2, "Signal Strength (1-3)", minval=1, maxval=3, tooltip="1=Aggressive, 2=Balanced, 3=Conservative", group=grpSignals)
+bool   req_structure = input.bool(true, "Require Market Structure Confirmation", group=grpSignals)
+bool   req_zone = input.bool(true, "Require S/R Zone Touch", group=grpSignals)
+int    signal_size = input.int(2, "Signal Label Size", minval=1, maxval=4, group=grpSignals)
+
+// Group Colors
+color  col_g1       = input.color(#ff0000, "G1: Distribution", group=grpVis)
+color  col_g2       = input.color(#ffcd03, "G2: No Demand", group=grpVis)
+color  col_g3       = input.color(#00E676, "G3: Absorption", group=grpVis)
+color  col_g4       = input.color(#00bcd4, "G4: Exhaustion", group=grpVis)
+string tbl_pos      = input.string(position.bottom_left, "Table Position", options=[position.top_right, position.bottom_right, position.top_left, position.bottom_left, position.middle_left, position.middle_right], group=grpVis)
+
+//══════════════
+//  Data Structures
+//══════════════
+type BarData
+    int   idx        
+    float price_h 
+    float price_l 
+    float price_c 
+    float vol_b
+    float vol_s
+    int   rank_h = 0 
+    int   rank_l = 0
+
+// NEW: Divergence Type
+type Divergence
+    string dtype  // "bullish" or "bearish"
+    int    idx1
+    int    idx2
+    float  price1
+    float  price2
+    float  vol1
+    float  vol2
+
+// NEW: Market Structure Event
+type StructEvent
+    string stype  // "BOS" or "CHoCH"
+    string dir    // "bullish" or "bearish"
+    int    idx
+    float  price
+    float  prev_level
+
+[u_intra, d_intra, _] = tvta.requestUpAndDownVolume(ltf_input)
+float b_curr = 0.0
+float s_curr = 0.0
+
+if calc_method == "Intrabar (Precise)"
+    b_curr := nz(math.abs(u_intra))
+    s_curr := nz(math.abs(d_intra))
+else
+    float range_i = high - low
+    if range_i == 0
+        b_curr := volume * 0.5
+        s_curr := volume * 0.5
+    else
+        b_curr := volume * ((close - low) / range_i)
+        s_curr := volume * ((high - close) / range_i)
+
+// NEW: Cumulative Volume Delta
+var float cum_delta = 0.0
+cum_delta += (b_curr - s_curr)
+
+// NEW: Order Flow Pressure (normalized)
+float flow_pressure = (b_curr - s_curr) / (b_curr + s_curr + 0.0001) * 100
+
+//══════════════
+//  Helper Functions
+//══════════════
+get_curr_symbol() =>
+    string c = syminfo.currency
+    string s = c
+    if c == "USD" 
+        s := "$"
+    else if c == "EUR"
+        s := "€"
+    else if c == "TRY"
+        s := "₺"
+    else if c == "GBP"
+        s := "£"
+    else if c == "JPY"
+        s := "¥"
+    s
+
+format_vol(float v) =>
+    string s = ""
+    if v >= 1000000000
+        s := str.format("{0,number,#.##}B", v / 1000000000)
+    else if v >= 1000000
+        s := str.format("{0,number,#.##}M", v / 1000000)
+    else if v >= 1000
+        s := str.format("{0,number,#.##}K", v / 1000)
+    else
+        s := str.format("{0,number,#.##}", v)
+    s
+
+get_txt_size(string s) =>
+    string res = size.small
+    if s == "Tiny"
+        res := size.tiny
+    else if s == "Normal"
+        res := size.normal
+    else if s == "Large"
+        res := size.large
+    else if s == "Huge"
+        res := size.huge
+    res
+
+get_line_style(string s) =>
+    string st = line.style_solid
+    if s == "Dashed"
+        st := line.style_dashed
+    else if s == "Dotted"
+        st := line.style_dotted
+    st
+
+// Management Arrays
+var label[] managed_labels = array.new_label()
+var line[]  managed_lines  = array.new_line()
+var linefill[] managed_fills = array.new_linefill()
+var box[] managed_boxes = array.new_box()
+float atr = ta.atr(14)
+
+// NEW: Pivot Detection
+pivot_high = ta.pivothigh(high, struct_len, struct_len)
+pivot_low = ta.pivotlow(low, struct_len, struct_len)
+
+// NEW: Store last pivots for structure analysis
+var float last_pivot_high = na
+var float last_pivot_low = na
+var int last_pivot_high_idx = na
+var int last_pivot_low_idx = na
+
+// NEW v3.1: DYNAMIC Recent High/Low (Always shows MOST RECENT swing points)
+var float recent_swing_high = na
+var float recent_swing_low = na
+var int recent_swing_high_idx = na
+var int recent_swing_low_idx = na
+
+// Update structure pivots
+if not na(pivot_high)
+    last_pivot_high := pivot_high
+    last_pivot_high_idx := bar_index - struct_len
+
+if not na(pivot_low)
+    last_pivot_low := pivot_low
+    last_pivot_low_idx := bar_index - struct_len
+
+// DYNAMIC UPDATE: Always track the most recent swing high/low
+// This updates every bar to show the latest levels
+if not na(pivot_high)
+    // New swing high detected - this becomes the recent high
+    recent_swing_high := pivot_high
+    recent_swing_high_idx := bar_index - struct_len
+else
+    // No new pivot, but check if current high is making new highs
+    // Keep tracking highest point since last swing high
+    if not na(recent_swing_high)
+        if high > recent_swing_high
+            // Made new high - update to current high
+            recent_swing_high := high
+            recent_swing_high_idx := bar_index
+
+if not na(pivot_low)
+    // New swing low detected - this becomes the recent low
+    recent_swing_low := pivot_low
+    recent_swing_low_idx := bar_index - struct_len
+else
+    // No new pivot, but check if current low is making new lows
+    // Keep tracking lowest point since last swing low
+    if not na(recent_swing_low)
+        if low < recent_swing_low
+            // Made new low - update to current low
+            recent_swing_low := low
+            recent_swing_low_idx := bar_index
+
+//══════════════
+//  NEW: Market Structure Detection (BOS/CHoCH)
+//══════════════
+var string current_trend = "neutral"
+var float last_bos_level = na
+string struct_signal = ""
+color struct_color = na
+
+// Detect Break of Structure
+if not na(last_pivot_high) and not na(last_pivot_low)
+    // Bullish BOS: Price breaks above previous high in uptrend
+    if close > last_pivot_high and current_trend == "bullish"
+        struct_signal := "BOS↑"
+        struct_color := bos_col
+        last_bos_level := last_pivot_high
+        if alert_bos and barstate.isconfirmed
+            alert("Bullish Break of Structure at " + str.tostring(close), alert.freq_once_per_bar)
+    
+    // Bearish BOS: Price breaks below previous low in downtrend
+    else if close < last_pivot_low and current_trend == "bearish"
+        struct_signal := "BOS↓"
+        struct_color := bos_col
+        last_bos_level := last_pivot_low
+        if alert_bos and barstate.isconfirmed
+            alert("Bearish Break of Structure at " + str.tostring(close), alert.freq_once_per_bar)
+    
+    // Bullish CHoCH: Price breaks above previous high in downtrend (trend reversal)
+    else if close > last_pivot_high and current_trend == "bearish"
+        struct_signal := "CHoCH↑"
+        struct_color := choch_col
+        current_trend := "bullish"
+        if alert_bos and barstate.isconfirmed
+            alert("Bullish Change of Character at " + str.tostring(close), alert.freq_once_per_bar)
+    
+    // Bearish CHoCH: Price breaks below previous low in uptrend (trend reversal)
+    else if close < last_pivot_low and current_trend == "bullish"
+        struct_signal := "CHoCH↓"
+        struct_color := choch_col
+        current_trend := "bearish"
+        if alert_bos and barstate.isconfirmed
+            alert("Bearish Change of Character at " + str.tostring(close), alert.freq_once_per_bar)
+
+// Display Structure Labels
+if show_struct and struct_signal != ""
+    label.new(bar_index, struct_signal == "BOS↑" or struct_signal == "CHoCH↑" ? high : low, struct_signal, color=color.new(struct_color, 20), style=struct_signal == "BOS↑" or struct_signal == "CHoCH↑" ? label.style_label_down : label.style_label_up, textcolor=color.white, size=size.small)
+
+//══════════════
+//  NEW: Divergence Detection
+//══════════════
+detect_divergence() =>
+    Divergence[] divs = array.new<Divergence>()
+    
+    // Find price pivots
+    float ph = ta.pivothigh(high, div_period, div_period)
+    float pl = ta.pivotlow(low, div_period, div_period)
+    
+    // Find volume pivots (using total volume)
+    float total_vol = b_curr + s_curr
+    float vh = ta.pivothigh(total_vol, div_period, div_period)
+    float vl = ta.pivotlow(total_vol, div_period, div_period)
+    
+    // Bearish Divergence: Price makes higher high, volume makes lower high
+    if not na(ph) and not na(vh)
+        for i = 1 to 50
+            float prev_ph = high[div_period + i]
+            float prev_vh = (b_curr[div_period + i] + s_curr[div_period + i])
+            
+            if not na(prev_ph) and prev_ph < ph and not na(prev_vh) and prev_vh > (b_curr[div_period] + s_curr[div_period])
+                array.push(divs, Divergence.new("bearish", bar_index - div_period - i, bar_index - div_period, prev_ph, ph, prev_vh, (b_curr[div_period] + s_curr[div_period])))
+                break
+    
+    // Bullish Divergence: Price makes lower low, volume makes higher low
+    if not na(pl) and not na(vl)
+        for i = 1 to 50
+            float prev_pl = low[div_period + i]
+            float prev_vl = (b_curr[div_period + i] + s_curr[div_period + i])
+            
+            if not na(prev_pl) and prev_pl > pl and not na(prev_vl) and prev_vl < (b_curr[div_period] + s_curr[div_period])
+                array.push(divs, Divergence.new("bullish", bar_index - div_period - i, bar_index - div_period, prev_pl, pl, prev_vl, (b_curr[div_period] + s_curr[div_period])))
+                break
+    
+    divs
+
+//══════════════
+//  NEW: Divergence Detection (Calculate on every bar)
+//══════════════
+Divergence[] detected_divs = detect_divergence()
+
+//══════════════
+//  NEW: Buy/Sell Signal Generation
+//══════════════
+var string last_signal = "none"
+var int signal_bar = 0
+bool buy_signal = false
+bool sell_signal = false
+string signal_reason = ""
+
+// Simple zone detection for signals (using recent highs/lows)
+float recent_high = ta.highest(high, 20)
+float recent_low = ta.lowest(low, 20)
+float zone_threshold = atr * 2
+
+// Calculate signal conditions
+bool at_support = close <= (recent_low + zone_threshold)
+bool at_resistance = close >= (recent_high - zone_threshold)
+bool bullish_structure = current_trend == "bullish"
+bool bearish_structure = current_trend == "bearish"
+bool has_bull_div = false
+bool has_bear_div = false
+
+// Check for recent divergence
+if array.size(detected_divs) > 0
+    for div in detected_divs
+        if div.idx2 >= bar_index - 3
+            if div.dtype == "bullish"
+                has_bull_div := true
+            else if div.dtype == "bearish"
+                has_bear_div := true
+
+// Volume conditions
+float vol_avg = ta.sma(volume, 20)
+bool high_volume = volume > vol_avg * 1.5
+bool vol_buy_dom = b_curr > s_curr * 1.2
+bool vol_sell_dom = s_curr > b_curr * 1.2
+
+// Order flow condition
+bool bullish_flow = flow_pressure > 20
+bool bearish_flow = flow_pressure < -20
+
+// AGGRESSIVE (Strength 1): Any strong volume signal
+if signal_strength == 1
+    // BUY: Absorption + bullish flow
+    if vol_buy_dom and bullish_flow and high_volume
+        buy_signal := true
+        signal_reason := "Strong Buying"
+    
+    // SELL: Distribution + bearish flow
+    else if vol_sell_dom and bearish_flow and high_volume
+        sell_signal := true
+        signal_reason := "Strong Selling"
+
+// BALANCED (Strength 2): Volume + Structure OR Divergence
+else if signal_strength == 2
+    // BUY Conditions
+    if vol_buy_dom and high_volume
+        if (not req_structure or bullish_structure) and (not req_zone or at_support)
+            buy_signal := true
+            signal_reason := "Absorption"
+        else if has_bull_div
+            buy_signal := true
+            signal_reason := "Bull Div + Vol"
+    
+    // SELL Conditions
+    else if vol_sell_dom and high_volume
+        if (not req_structure or bearish_structure) and (not req_zone or at_resistance)
+            sell_signal := true
+            signal_reason := "Distribution"
+        else if has_bear_div
+            sell_signal := true
+            signal_reason := "Bear Div + Vol"
+
+// CONSERVATIVE (Strength 3): All confirmations required
+else if signal_strength == 3
+    // BUY: Must have structure + volume + (zone OR divergence)
+    if bullish_structure and vol_buy_dom and high_volume
+        if (at_support or has_bull_div)
+            buy_signal := true
+            signal_reason := "Full Confluence"
+    
+    // SELL: Must have structure + volume + (zone OR divergence)
+    if bearish_structure and vol_sell_dom and high_volume
+        if (at_resistance or has_bear_div)
+            sell_signal := true
+            signal_reason := "Full Confluence"
+
+// Prevent signal spam (wait 5 bars between signals)
+if (buy_signal or sell_signal) and (bar_index - signal_bar) < 5
+    buy_signal := false
+    sell_signal := false
+
+// Update last signal
+if buy_signal
+    last_signal := "buy"
+    signal_bar := bar_index
+else if sell_signal
+    last_signal := "sell"
+    signal_bar := bar_index
+
+//══════════════
+//  NEW v3: TREND CONFIRMATION SCORE & DIRECTION SYSTEM
+//══════════════
+
+// 1. TREND CONFIRMATION SCORE (0-100 scale)
+// Components: Structure (30%) + Volume (25%) + Zones (20%) + Divergence (15%) + Flow (10%)
+float trend_score = 50.0  // Start neutral
+
+// Structure Component (±30 points)
+if current_trend == "bullish"
+    trend_score += 30
+else if current_trend == "bearish"
+    trend_score -= 30
+// neutral adds 0
+
+// Volume Component (±25 points)
+if vol_buy_dom and high_volume
+    trend_score += 25
+else if vol_sell_dom and high_volume
+    trend_score -= 25
+else if vol_buy_dom
+    trend_score += 12  // Medium strength
+else if vol_sell_dom
+    trend_score -= 12
+
+// Zone Component (±20 points)
+if at_support and vol_buy_dom
+    trend_score += 20  // Bullish: support holding with buying
+else if at_resistance and vol_sell_dom
+    trend_score -= 20  // Bearish: resistance holding with selling
+else if at_support and vol_sell_dom
+    trend_score -= 10  // Warning: support failing
+else if at_resistance and vol_buy_dom
+    trend_score += 10  // Possible breakout
+
+// Divergence Component (±15 points)
+if has_bull_div
+    trend_score += 15
+else if has_bear_div
+    trend_score -= 15
+
+// Order Flow Component (±10 points)
+if flow_pressure > 20
+    trend_score += 10
+else if flow_pressure < -20
+    trend_score -= 10
+else if flow_pressure > 0
+    trend_score += 5
+else if flow_pressure < 0
+    trend_score -= 5
+
+// Clamp score to 0-100 range
+trend_score := math.max(0, math.min(100, trend_score))
+
+// 2. TRAFFIC LIGHT DIRECTION SYSTEM
+string market_direction = "🟡 NEUTRAL"
+string action_bias = "Wait for Confirmation"
+color direction_color = color.new(color.yellow, 20)
+int confidence = 50
+
+if trend_score >= 70
+    market_direction := "🟢 BULLISH"
+    action_bias := "Buy Dips at Support"
+    direction_color := color.new(#00E676, 20)
+    confidence := math.round((trend_score - 70) / 30 * 50 + 50)  // 50-100%
+else if trend_score <= 30
+    market_direction := "🔴 BEARISH"
+    action_bias := "Sell Rallies at Resistance"
+    direction_color := color.new(#ff0000, 20)
+    confidence := math.round((30 - trend_score) / 30 * 50 + 50)  // 50-100%
+else if trend_score >= 55
+    market_direction := "🟡 SLIGHTLY BULLISH"
+    action_bias := "Watch for Bullish Confirmation"
+    confidence := 50 + math.round((trend_score - 50) / 20 * 25)
+else if trend_score <= 45
+    market_direction := "🟡 SLIGHTLY BEARISH"
+    action_bias := "Watch for Bearish Confirmation"
+    confidence := 50 + math.round((50 - trend_score) / 20 * 25)
+else
+    confidence := 40  // True neutral = low confidence
+
+// 3. FAKE-OUT DETECTOR
+bool fake_out_risk = false
+string fake_out_reason = "None"
+int fake_signals = 0
+
+// Fake-Out Type 1: Volume Divergence (price breaks but volume weak)
+if close > recent_high[1] and volume < vol_avg * 1.2
+    fake_out_risk := true
+    fake_out_reason := "Weak Breakout Volume"
+    fake_signals += 1
+else if close < recent_low[1] and volume < vol_avg * 1.2
+    fake_out_risk := true
+    fake_out_reason := "Weak Breakdown Volume"
+    fake_signals += 1
+
+// Fake-Out Type 2: Volume Direction Mismatch
+if close > recent_high[1] and vol_sell_dom and high_volume
+    fake_out_risk := true
+    fake_out_reason := "Distribution at Breakout"
+    fake_signals += 2  // Higher weight
+else if close < recent_low[1] and vol_buy_dom and high_volume
+    fake_out_risk := true
+    fake_out_reason := "Absorption at Breakdown"
+    fake_signals += 2
+
+// Fake-Out Type 3: Failed Structure Break
+if current_trend == "bearish" and close > last_pivot_high and vol_sell_dom
+    fake_out_risk := true
+    fake_out_reason := "Failed CHoCH"
+    fake_signals += 1
+else if current_trend == "bullish" and close < last_pivot_low and vol_buy_dom
+    fake_out_risk := true
+    fake_out_reason := "Failed CHoCH"
+    fake_signals += 1
+
+// Fake-Out Type 4: Stop Hunt (Large wick reversal)
+float wick_threshold = atr * 1.5
+bool stop_hunt_up = (high - close) > wick_threshold and close < open and high > recent_high[1]
+bool stop_hunt_down = (close - low) > wick_threshold and close > open and low < recent_low[1]
+
+if stop_hunt_up
+    fake_out_risk := true
+    fake_out_reason := "Stop Hunt Above"
+    fake_signals += 1
+else if stop_hunt_down
+    fake_out_risk := true
+    fake_out_reason := "Stop Hunt Below"
+    fake_signals += 1
+
+// Overall Fake-Out Risk Level
+string fake_risk_level = fake_signals >= 2 ? "⚠️ HIGH" : fake_signals == 1 ? "⚠ MEDIUM" : "✓ LOW"
+
+// 4. REVERSAL PROBABILITY CALCULATOR
+float reversal_prob = 0.0
+int reversal_signals = 0
+
+// Signal 1: Divergence (strongest)
+if has_bull_div and trend_score < 50
+    reversal_prob += 30
+    reversal_signals += 1
+else if has_bear_div and trend_score > 50
+    reversal_prob += 30
+    reversal_signals += 1
+
+// Signal 2: Structure Break (CHoCH)
+if struct_signal == "CHoCH↑" or struct_signal == "CHoCH↓"
+    reversal_prob += 25
+    reversal_signals += 1
+
+// Signal 3: Extreme Zone + Opposite Volume
+if at_support and vol_buy_dom and high_volume and trend_score < 40
+    reversal_prob += 25
+    reversal_signals += 1
+else if at_resistance and vol_sell_dom and high_volume and trend_score > 60
+    reversal_prob += 25
+    reversal_signals += 1
+
+// Signal 4: Exhaustion Volume
+float vol_extreme = ta.highest(volume, 20)
+if volume >= vol_extreme * 0.95 and trend_score < 30
+    reversal_prob += 20  // Capitulation
+    reversal_signals += 1
+else if volume >= vol_extreme * 0.95 and trend_score > 70
+    reversal_prob += 20  // Blowoff top
+    reversal_signals += 1
+
+reversal_prob := math.min(100, reversal_prob)
+string reversal_status = reversal_prob > 60 ? "HIGH (" + str.tostring(reversal_signals) + "/4 signals)" : 
+                         reversal_prob > 30 ? "MEDIUM (" + str.tostring(reversal_signals) + "/4 signals)" : 
+                         "LOW (" + str.tostring(reversal_signals) + "/4 signals)"
+
+//══════════════
+//  CORE LOGIC (SNAPSHOT ENGINE)
+//══════════════
+if barstate.islast
+    // 1. CLEANUP
+    while array.size(managed_labels) > 0
+        label.delete(array.pop(managed_labels))
+    while array.size(managed_lines) > 0
+        line.delete(array.pop(managed_lines))
+    while array.size(managed_fills) > 0
+        linefill.delete(array.pop(managed_fills))
+    while array.size(managed_boxes) > 0
+        box.delete(array.pop(managed_boxes))
+
+    // 2. Data Collection
+    BarData[] window_data = array.new<BarData>()
+    for i = 0 to lookback_len - 1
+        if (bar_index - i) < 0
+            break
+        float p_h = high[i]
+        float p_l = low[i]
+        float p_c = close[i] 
+        float v_b = b_curr[i]
+        float v_s = s_curr[i]
+        int   id  = bar_index - i
+        array.push(window_data, BarData.new(id, p_h, p_l, p_c, v_b, v_s))
+
+    // 3. Volume Threshold Calculation
+    float[] all_vb = array.new_float()
+    float[] all_vs = array.new_float()
+    for item in window_data
+        array.push(all_vb, item.vol_b)
+        array.push(all_vs, item.vol_s)
+    array.sort(all_vb)
+    array.sort(all_vs)
+    
+    int sz = array.size(all_vb)
+    float t_vb_hi = (sz > top_count) ? array.get(all_vb, sz - top_count) : 0.0
+    float t_vs_hi = (sz > top_count) ? array.get(all_vs, sz - top_count) : 0.0
+    float t_vb_lo = (sz > top_count) ? array.get(all_vb, top_count - 1) : 999999.9
+    float t_vs_lo = (sz > top_count) ? array.get(all_vs, top_count - 1) : 999999.9
+
+    // 4. Ranking Logic
+    BarData[] top_highs_c = array.copy(window_data)
+    int n = array.size(top_highs_c)
+    for i = 0 to math.min(top_count + 5, n - 1)
+        for j = 0 to n - 2 - i
+            BarData b1 = array.get(top_highs_c, j)
+            BarData b2 = array.get(top_highs_c, j + 1)
+            if b1.price_c < b2.price_c 
+                array.set(top_highs_c, j, b2)
+                array.set(top_highs_c, j + 1, b1)
+
+    for i = 0 to n - 1
+        if i < top_count
+            BarData b = array.get(top_highs_c, i)
+            b.rank_h := i + 1
+
+    BarData[] top_lows_c = array.copy(window_data)
+    for i = 0 to math.min(top_count + 5, n - 1)
+        for j = 0 to n - 2 - i
+            BarData b1 = array.get(top_lows_c, j)
+            BarData b2 = array.get(top_lows_c, j + 1)
+            if b1.price_c > b2.price_c 
+                array.set(top_lows_c, j, b2)
+                array.set(top_lows_c, j + 1, b1)
+    
+    for i = 0 to n - 1
+        if i < top_count
+            BarData b = array.get(top_lows_c, i)
+            b.rank_l := i + 1
+
+    // NEW: Display Divergences from pre-calculated data
+    if show_div and array.size(detected_divs) > 0
+        for div in detected_divs
+            bool is_bull = div.dtype == "bullish"
+            line div_line = line.new(div.idx1, div.price1, div.idx2, div.price2, color=is_bull ? div_bull_col : div_bear_col, width=2, style=line.style_dashed)
+            array.push(managed_lines, div_line)
+            
+            label div_lbl = label.new(div.idx2, div.price2, is_bull ? "Bull Div" : "Bear Div", color=is_bull ? div_bull_col : div_bear_col, style=is_bull ? label.style_label_up : label.style_label_down, textcolor=color.white, size=size.small)
+            array.push(managed_labels, div_lbl)
+            
+            if alert_div and barstate.isconfirmed
+                alert((is_bull ? "Bullish" : "Bearish") + " Divergence Detected", alert.freq_once_per_bar)
+
+    //══════════════
+    //  ZONE DETECTION (Enhanced with multiple levels)
+    //══════════════
+    float z_res_top = na
+    float z_res_bot = na
+    int   z_res_idx = na
+    
+    float z_sup_top = na
+    float z_sup_bot = na
+    int   z_sup_idx = na
+    
+    // Find top 3 resistance zones
+    float[] res_levels = array.new_float()
+    int[]   res_indices = array.new_int()
+    
+    for i = 0 to math.min(top_count - 1, 2)  // Top 3
+        BarData b = array.get(top_highs_c, i)
+        bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+        if is_high_v
+            array.push(res_levels, b.price_h)
+            array.push(res_indices, b.idx)
+    
+    // Find top 3 support zones
+    float[] sup_levels = array.new_float()
+    int[]   sup_indices = array.new_int()
+    
+    for i = 0 to math.min(top_count - 1, 2)  // Top 3
+        BarData b = array.get(top_lows_c, i)
+        bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+        if is_high_v
+            array.push(sup_levels, b.price_l)
+            array.push(sup_indices, b.idx)
+    
+    // Main resistance (highest with volume)
+    float max_c = na
+    for i = 0 to top_count - 1
+        BarData b = array.get(top_highs_c, i)
+        bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+        if is_high_v
+            if na(max_c) or b.price_c > max_c
+                max_c     := b.price_c
+                z_res_top := b.price_h
+                z_res_bot := b.price_l 
+                z_res_idx := b.idx
+    
+    // Main support (lowest with volume)
+    float min_c = na
+    for i = 0 to top_count - 1
+        BarData b = array.get(top_lows_c, i)
+        bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+        if is_high_v
+            if na(min_c) or b.price_c < min_c
+                min_c     := b.price_c
+                z_sup_top := b.price_h
+                z_sup_bot := b.price_l 
+                z_sup_idx := b.idx
+
+    // Draw Main Zones
+    if show_zones
+        // NEW v3.1: Draw RECENT High/Low Lines (Dynamic - Always Most Recent)
+        if not na(recent_swing_high) and not na(recent_swing_high_idx)
+            line prev_h_line = line.new(recent_swing_high_idx, recent_swing_high, bar_index + proj_len, recent_swing_high, xloc.bar_index, extend.none, color.new(#ff6d00, 30), line.style_solid, 2)
+            array.push(managed_lines, prev_h_line)
+            label prev_h_label = label.new(bar_index + 5, recent_swing_high, "RECENT HIGH", xloc.bar_index, yloc.price, color.new(#ff6d00, 20), label.style_label_left, color.white, size.small)
+            array.push(managed_labels, prev_h_label)
+        
+        if not na(recent_swing_low) and not na(recent_swing_low_idx)
+            line prev_l_line = line.new(recent_swing_low_idx, recent_swing_low, bar_index + proj_len, recent_swing_low, xloc.bar_index, extend.none, color.new(#00E676, 30), line.style_solid, 2)
+            array.push(managed_lines, prev_l_line)
+            label prev_l_label = label.new(bar_index + 5, recent_swing_low, "RECENT LOW", xloc.bar_index, yloc.price, color.new(#00E676, 20), label.style_label_left, color.white, size.small)
+            array.push(managed_labels, prev_l_label)
+        
+        // Volume-based zones
+        if not na(z_res_top)
+            box bx = box.new(z_res_idx, z_res_top, bar_index + proj_len, z_res_bot, color.new(col_g1, 50), 1, line.style_dashed, extend.none, xloc.bar_index, color.new(col_g1, 90))
+            array.push(managed_boxes, bx)
+            
+            // Check for zone touch alert
+            if alert_zone and close >= z_res_bot and close <= z_res_top
+                alert("Price entering RESISTANCE zone", alert.freq_once_per_bar)
+            
+        if not na(z_sup_top)
+            box bx = box.new(z_sup_idx, z_sup_top, bar_index + proj_len, z_sup_bot, color.new(col_g3, 50), 1, line.style_dashed, extend.none, xloc.bar_index, color.new(col_g3, 90))
+            array.push(managed_boxes, bx)
+            
+            // Check for zone touch alert
+            if alert_zone and close >= z_sup_bot and close <= z_sup_top
+                alert("Price entering SUPPORT zone", alert.freq_once_per_bar)
+
+    //══════════════
+    //  TREND LINES (Enhanced with standard deviation bands)
+    //══════════════
+    if show_trend
+        BarData[] trend_highs = array.copy(window_data)
+        int nt = array.size(trend_highs)
+        for i = 0 to math.min(top_count + 5, nt - 1)
+            for j = 0 to nt - 2 - i
+                BarData b1 = array.get(trend_highs, j)
+                BarData b2 = array.get(trend_highs, j + 1)
+                if b1.price_h < b2.price_h 
+                    array.set(trend_highs, j, b2)
+                    array.set(trend_highs, j + 1, b1)
+        
+        BarData[] trend_lows = array.copy(window_data)
+        for i = 0 to math.min(top_count + 5, nt - 1)
+            for j = 0 to nt - 2 - i
+                BarData b1 = array.get(trend_lows, j)
+                BarData b2 = array.get(trend_lows, j + 1)
+                if b1.price_l > b2.price_l 
+                    array.set(trend_lows, j, b2)
+                    array.set(trend_lows, j + 1, b1)
+
+        float sum_x_h = 0.0, sum_y_h = 0.0, sum_xy_h = 0.0, sum_xx_h = 0.0
+        float sum_x_l = 0.0, sum_y_l = 0.0, sum_xy_l = 0.0, sum_xx_l = 0.0
+        int N = top_count
+
+        for i = 0 to top_count - 1
+            BarData bh = array.get(trend_highs, i)
+            sum_x_h  += bh.idx
+            sum_y_h  += bh.price_h
+            sum_xy_h += (bh.idx * bh.price_h)
+            sum_xx_h += (bh.idx * bh.idx)
+            BarData bl = array.get(trend_lows, i)
+            sum_x_l  += bl.idx
+            sum_y_l  += bl.price_l
+            sum_xy_l += (bl.idx * bl.price_l)
+            sum_xx_l += (bl.idx * bl.idx)
+
+        float m_h = (N * sum_xy_h - sum_x_h * sum_y_h) / (N * sum_xx_h - sum_x_h * sum_x_h)
+        float c_h = (sum_y_h - m_h * sum_x_h) / N
+        float m_l = (N * sum_xy_l - sum_x_l * sum_y_l) / (N * sum_xx_l - sum_x_l * sum_x_l)
+        float c_l = (sum_y_l - m_l * sum_x_l) / N
+
+        int x1 = bar_index - lookback_len + 1
+        int x2_proj = bar_index + proj_len 
+        
+        float y1_h = m_h * x1 + c_h
+        float y2_h = m_h * x2_proj + c_h
+        float y1_l = m_l * x1 + c_l
+        float y2_l = m_l * x2_proj + c_l
+        
+        string tr_st_str = get_line_style(tr_style_in)
+        line ln_h = line.new(x1, y1_h, x2_proj, y2_h, xloc.bar_index, extend.none, tr_col_h, tr_st_str, tr_width)
+        line ln_l = line.new(x1, y1_l, x2_proj, y2_l, xloc.bar_index, extend.none, tr_col_l, tr_st_str, tr_width)
+        linefill lf = linefill.new(ln_h, ln_l, tr_fill_col)
+        
+        array.push(managed_lines, ln_h)
+        array.push(managed_lines, ln_l)
+        array.push(managed_fills, lf)
+
+    //══════════════
+    //  VISUALIZATION (Enhanced Labels with Alerts)
+    //══════════════
+    if show_labels
+        string l_size = get_txt_size(txt_size_lbl)
+        float spacer  = atr * 0.6
+        float gap     = atr * 0.2 
+        
+        // Highs Processing
+        BarData[] draw_highs = array.new<BarData>()
+        for i = 0 to top_count - 1
+            array.push(draw_highs, array.get(top_highs_c, i))
+        int nd = array.size(draw_highs)
+        if nd > 1
+            for i = 0 to nd - 2
+                for j = 0 to nd - 2 - i
+                    BarData b1 = array.get(draw_highs, j)
+                    BarData b2 = array.get(draw_highs, j + 1)
+                    if b1.idx > b2.idx
+                        array.set(draw_highs, j, b2)
+                        array.set(draw_highs, j + 1, b1)
+
+        float last_y_h = 0.0
+        int   last_x_h = -9999
+        for i = 0 to nd - 1
+            BarData b = array.get(draw_highs, i)
+            bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+            bool is_low_v  = (b.vol_b <= t_vb_lo) or (b.vol_s <= t_vs_lo)
+            bool sell_dom  = b.vol_s > b.vol_b
+            string txt = "P " + str.tostring(b.rank_h) 
+            string grp = ""
+            color  col = color.gray
+            if is_high_v
+                col := col_g1
+                grp := sell_dom ? "Heavy Selling" : "Buying Peak"
+                // Alert trigger
+                if alert_dist and sell_dom and b.idx == bar_index
+                    alert("Heavy selling detected at " + str.tostring(b.price_h), alert.freq_once_per_bar)
+            else if is_low_v
+                col := col_g2
+                grp := "Weak Buyers"
+            if grp != ""
+                txt += "\n" + grp
+                float y_pos = b.price_h + spacer
+                if (b.idx - last_x_h) < 6
+                    if y_pos < (last_y_h + spacer/2)
+                        y_pos := math.max(y_pos, last_y_h + spacer)
+                label lbl = label.new(b.idx, y_pos, txt, xloc.bar_index, yloc.price, color.new(col, lbl_transp), label.style_label_down, color.white, l_size)
+                array.push(managed_labels, lbl)
+                if show_lines
+                    line ln = line.new(b.idx, y_pos, b.idx, b.price_h + gap, xloc.bar_index, extend.none, color.new(col, 30), line.style_dashed, 1)
+                    array.push(managed_lines, ln)
+                last_y_h := y_pos
+                last_x_h := b.idx
+
+        // Lows Processing
+        BarData[] draw_lows = array.new<BarData>()
+        for i = 0 to top_count - 1
+            array.push(draw_lows, array.get(top_lows_c, i))
+        int ndl = array.size(draw_lows)
+        if ndl > 1
+            for i = 0 to ndl - 2
+                for j = 0 to ndl - 2 - i
+                    BarData b1 = array.get(draw_lows, j)
+                    BarData b2 = array.get(draw_lows, j + 1)
+                    if b1.idx > b2.idx 
+                        array.set(draw_lows, j, b2)
+                        array.set(draw_lows, j + 1, b1)
+
+        float last_y_l = 10000000.0
+        int   last_x_l = -9999
+        for i = 0 to ndl - 1
+            BarData b = array.get(draw_lows, i)
+            bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+            bool is_low_v  = (b.vol_b <= t_vb_lo) or (b.vol_s <= t_vs_lo)
+            bool buy_dom   = b.vol_b > b.vol_s 
+            string txt = "L " + str.tostring(b.rank_l)
+            string grp = ""
+            color  col = color.gray
+            if is_high_v
+                col := col_g3
+                grp := buy_dom ? "Heavy Buying" : "Panic Selling"
+                // Alert trigger
+                if alert_abs and buy_dom and b.idx == bar_index
+                    alert("Heavy buying detected at " + str.tostring(b.price_l), alert.freq_once_per_bar)
+            else if is_low_v
+                col := col_g4
+                grp := "Sellers Tired"
+            if grp != ""
+                txt += "\n" + grp
+                float y_pos_l = b.price_l - spacer
+                if (b.idx - last_x_l) < 6
+                    if y_pos_l > (last_y_l - spacer/2)
+                        y_pos_l := math.min(y_pos_l, last_y_l - spacer)
+                label lbl = label.new(b.idx, y_pos_l, txt, xloc.bar_index, yloc.price, color.new(col, lbl_transp), label.style_label_up, color.white, l_size)
+                array.push(managed_labels, lbl)
+                if show_lines
+                    line ln = line.new(b.idx, y_pos_l, b.idx, b.price_l - gap, xloc.bar_index, extend.none, color.new(col, 30), line.style_dashed, 1)
+                    array.push(managed_lines, ln)
+                last_y_l := y_pos_l
+                last_x_l := b.idx
+
+    //══════════════
+    //  ENHANCED DASHBOARD v3 - DIRECTION PRO
+    //══════════════
+    if show_table
+        string t_size = get_txt_size(txt_size_tbl)
+        var table tbl = table.new(tbl_pos, 5, 50, border_width=1, frame_color=color.gray, border_color=color.gray)
+        
+        // HEADER
+        table.cell(tbl, 0, 0, "SMV MATRIX PRO - DIRECTION", text_color=color.white, bgcolor=color.new(#2962FF, 30), text_size=size.normal)
+        table.merge_cells(tbl, 0, 0, 4, 0)
+        
+        // NEW v3: TRAFFIC LIGHT & TREND SCORE
+        table.cell(tbl, 0, 1, market_direction, text_color=color.white, bgcolor=direction_color, text_size=size.normal)
+        table.merge_cells(tbl, 0, 1, 2, 1)
+        
+        string conf_str = "Confidence: " + str.tostring(confidence) + "%"
+        table.cell(tbl, 3, 1, conf_str, text_color=color.white, bgcolor=direction_color, text_size=size.normal)
+        table.merge_cells(tbl, 3, 1, 4, 1)
+        
+        // Trend Score Bar
+        string score_str = "Trend Score: " + str.tostring(math.round(trend_score)) + "/100"
+        color score_bg = trend_score >= 70 ? color.new(#00E676, 60) : trend_score <= 30 ? color.new(#ff0000, 60) : color.new(#ffcd03, 60)
+        table.cell(tbl, 0, 2, score_str, text_color=color.white, bgcolor=score_bg, text_size=t_size)
+        table.merge_cells(tbl, 0, 2, 2, 2)
+        
+        table.cell(tbl, 3, 2, action_bias, text_color=color.white, bgcolor=score_bg, text_size=t_size)
+        table.merge_cells(tbl, 3, 2, 4, 2)
+        
+        // RISK & REVERSAL INDICATORS
+        table.cell(tbl, 0, 3, "RISK ANALYSIS", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        table.merge_cells(tbl, 0, 3, 4, 3)
+        
+        color header_bg = #333333
+        table.cell(tbl, 0, 4, "Indicator", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 1, 4, "Status", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 2, 4, "Indicator", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 3, 4, "Status", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 4, 4, "Details", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        
+        // Row 1: Fake-Out Risk & Reversal Probability
+        table.cell(tbl, 0, 5, "Fake-Out Risk", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        color fake_col = fake_signals >= 2 ? #ff0000 : fake_signals == 1 ? #ffcd03 : #00E676
+        table.cell(tbl, 1, 5, fake_risk_level, text_color=fake_col, bgcolor=#1a1a1a, text_size=t_size)
+        
+        table.cell(tbl, 2, 5, "Reversal Prob", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        color rev_col = reversal_prob > 60 ? #ff6d00 : reversal_prob > 30 ? #ffcd03 : #00E676
+        table.cell(tbl, 3, 5, str.tostring(math.round(reversal_prob)) + "%", text_color=rev_col, bgcolor=#1a1a1a, text_size=t_size)
+        
+        table.cell(tbl, 4, 5, reversal_status, text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        
+        // Row 2: Fake-Out Reason
+        if fake_out_risk
+            table.cell(tbl, 0, 6, "⚠ Warning:", text_color=#ff6d00, bgcolor=#1a1a1a, text_size=t_size)
+            table.cell(tbl, 1, 6, fake_out_reason, text_color=#ff6d00, bgcolor=#1a1a1a, text_size=t_size)
+            table.merge_cells(tbl, 1, 6, 4, 6)
+        
+        // MARKET METRICS SECTION
+        int metrics_row = fake_out_risk ? 7 : 6
+        table.cell(tbl, 0, metrics_row, "MARKET METRICS", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        table.merge_cells(tbl, 0, metrics_row, 4, metrics_row)
+        
+        int data_row = metrics_row + 1
+        table.cell(tbl, 0, data_row, "Metric", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 1, data_row, "Value", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 2, data_row, "Metric", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 3, data_row, "Value", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 4, data_row, "Status", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        
+        // Metrics Data
+        int val_row = data_row + 1
+        string delta_str = format_vol(cum_delta)
+        color delta_col = cum_delta > 0 ? #00E676 : #ff0000
+        
+        table.cell(tbl, 0, val_row, "Cum. Delta", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        table.cell(tbl, 1, val_row, delta_str, text_color=delta_col, bgcolor=#1a1a1a, text_size=t_size)
+        
+        string flow_str = str.tostring(flow_pressure, "#.##") + "%"
+        color flow_col = flow_pressure > 0 ? #00E676 : #ff0000
+        table.cell(tbl, 2, val_row, "Order Flow", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        table.cell(tbl, 3, val_row, flow_str, text_color=flow_col, bgcolor=#1a1a1a, text_size=t_size)
+        
+        string trend_str = current_trend == "bullish" ? "↑ Bullish" : current_trend == "bearish" ? "↓ Bearish" : "⟷ Neutral"
+        color trend_col = current_trend == "bullish" ? #00E676 : current_trend == "bearish" ? #ff0000 : #ffcd03
+        table.cell(tbl, 4, val_row, trend_str, text_color=trend_col, bgcolor=#1a1a1a, text_size=t_size)
+        
+        // HIGH PRICE LEADERS
+        int leader_row = val_row + 1
+        table.cell(tbl, 0, leader_row, "HIGH PRICE LEADERS (Close)", text_color=color.white, bgcolor=color.new(col_g1, 30), text_size=t_size)
+        table.merge_cells(tbl, 0, leader_row, 4, leader_row)
+        
+        int header_high_row = leader_row + 1
+        table.cell(tbl, 0, header_high_row, "Rank", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 1, header_high_row, "Close", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 2, header_high_row, "Buy Vol", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 3, header_high_row, "Sell Vol", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 4, header_high_row, "Group", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+
+        for i = 0 to top_count - 1
+            BarData b = array.get(top_highs_c, i)
+            bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+            bool is_low_v  = (b.vol_b <= t_vb_lo) or (b.vol_s <= t_vs_lo)
+            bool sell_dom  = b.vol_s > b.vol_b
+            string status = "-"
+            color bg = color.black
+            if is_high_v
+                bg := color.new(col_g1, 60)
+                status := sell_dom ? "Heavy Selling" : "Buying Peak"
+            else if is_low_v
+                bg := color.new(col_g2, 60)
+                status := "Weak Buyers"
+            int row_i = header_high_row + 1 + i
+            table.cell(tbl, 0, row_i, str.tostring(i+1), text_color=color.white, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 1, row_i, str.tostring(b.price_c, format.mintick), text_color=color.white, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 2, row_i, format_vol(b.vol_b), text_color=color.green, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 3, row_i, format_vol(b.vol_s), text_color=color.red, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 4, row_i, status, text_color=color.white, bgcolor=bg, text_size=t_size)
+
+        // LOW PRICE LEADERS
+        int row_offset = header_high_row + 1 + top_count
+        table.cell(tbl, 0, row_offset, "LOW PRICE LEADERS (Close)", text_color=color.white, bgcolor=color.new(col_g3, 30), text_size=t_size)
+        table.merge_cells(tbl, 0, row_offset, 4, row_offset)
+        
+        table.cell(tbl, 0, row_offset+1, "Rank", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 1, row_offset+1, "Close", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 2, row_offset+1, "Buy Vol", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 3, row_offset+1, "Sell Vol", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        table.cell(tbl, 4, row_offset+1, "Group", bgcolor=header_bg, text_color=color.white, text_size=t_size)
+        
+        for i = 0 to top_count - 1
+            BarData b = array.get(top_lows_c, i)
+            bool is_high_v = (b.vol_b >= t_vb_hi) or (b.vol_s >= t_vs_hi)
+            bool is_low_v  = (b.vol_b <= t_vb_lo) or (b.vol_s <= t_vs_lo)
+            bool buy_dom   = b.vol_b > b.vol_s
+            string status = "-"
+            color bg = color.black
+            if is_high_v
+                bg := color.new(col_g3, 60)
+                status := buy_dom ? "Heavy Buying" : "Panic Selling"
+            else if is_low_v
+                bg := color.new(col_g4, 60)
+                status := "Sellers Tired"
+            table.cell(tbl, 0, row_offset + 2 + i, str.tostring(i+1), text_color=color.white, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 1, row_offset + 2 + i, str.tostring(b.price_c, format.mintick), text_color=color.white, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 2, row_offset + 2 + i, format_vol(b.vol_b), text_color=color.green, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 3, row_offset + 2 + i, format_vol(b.vol_s), text_color=color.red, bgcolor=bg, text_size=t_size)
+            table.cell(tbl, 4, row_offset + 2 + i, status, text_color=color.white, bgcolor=bg, text_size=t_size)
+
+        // FOOTER WITH KEY LEVELS
+        int f_start = row_offset + top_count + 2
+        string cur_sym = get_curr_symbol()
+
+        // NEW v3.1: Recent High/Low (Dynamic Swing Points)
+        table.cell(tbl, 0, f_start, "KEY SWING LEVELS (LIVE)", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size)
+        table.merge_cells(tbl, 0, f_start, 4, f_start)
+        
+        int swing_row = f_start + 1
+        
+        // Recent High (Resistance)
+        string prev_h_txt = "Recent High: "
+        if not na(recent_swing_high)
+            prev_h_txt += str.tostring(recent_swing_high, format.mintick) + " " + cur_sym
+            int bars_ago = bar_index - recent_swing_high_idx
+            prev_h_txt += " (" + str.tostring(bars_ago) + " bars ago)"
+        else
+            prev_h_txt += "Detecting..."
+        table.cell(tbl, 0, swing_row, prev_h_txt, text_color=#ff6d00, bgcolor=#1a1a1a, text_size=t_size)
+        table.merge_cells(tbl, 0, swing_row, 4, swing_row)
+        
+        // Recent Low (Support)
+        string prev_l_txt = "Recent Low: "
+        if not na(recent_swing_low)
+            prev_l_txt += str.tostring(recent_swing_low, format.mintick) + " " + cur_sym
+            int bars_ago_low = bar_index - recent_swing_low_idx
+            prev_l_txt += " (" + str.tostring(bars_ago_low) + " bars ago)"
+        else
+            prev_l_txt += "Detecting..."
+        table.cell(tbl, 0, swing_row + 1, prev_l_txt, text_color=#00E676, bgcolor=#1a1a1a, text_size=t_size)
+        table.merge_cells(tbl, 0, swing_row + 1, 4, swing_row + 1)
+
+        // Volume-based Resistance Zone
+        int zone_row = swing_row + 2
+        string res_txt = "Volume Resistance Zone: "
+        if not na(z_res_top)
+            res_txt += str.tostring(z_res_bot, format.mintick) + " ~ " + str.tostring(z_res_top, format.mintick) + " " + cur_sym
+        else
+            res_txt += "None detected"
+        table.cell(tbl, 0, zone_row, res_txt, text_color=color.white, bgcolor=color.new(col_g1, 80), text_size=t_size)
+        table.merge_cells(tbl, 0, zone_row, 4, zone_row)
+
+        // Status
+        int stat_row = zone_row + 1
+        string stat_txt = "Waiting..."
+        color stat_col = color.gray
+        float cur = close
+        if not na(z_res_top) and not na(z_sup_top)
+            if cur > z_res_top
+                stat_txt := "💥 BREAKOUT Above Resistance!"
+                stat_col := #00E676
+            else if cur < z_sup_bot
+                stat_txt := "💥 BREAKDOWN Below Support!"
+                stat_col := #ff0000
+            else if cur > (z_res_bot * 0.99)
+                stat_txt := "⚠ Testing Resistance - Watch for rejection"
+                stat_col := #ffcd03
+            else if cur < (z_sup_top * 1.01)
+                stat_txt := "✓ At Support - Watch for bounce"
+                stat_col := #00E676
+            else
+                stat_txt := "~ Mid Range - No clear level"
+        
+        table.cell(tbl, 0, stat_row, stat_txt, text_color=stat_col, bgcolor=#333333, text_size=t_size)
+        table.merge_cells(tbl, 0, stat_row, 4, stat_row)
+
+        // Volume-based Support Zone
+        string sup_txt = "Volume Support Zone: "
+        if not na(z_sup_top)
+            sup_txt += str.tostring(z_sup_bot, format.mintick) + " ~ " + str.tostring(z_sup_top, format.mintick) + " " + cur_sym
+        else
+            sup_txt += "None detected"
+        table.cell(tbl, 0, stat_row + 1, sup_txt, text_color=color.white, bgcolor=color.new(col_g3, 80), text_size=t_size)
+        table.merge_cells(tbl, 0, stat_row + 1, 4, stat_row + 1)
+
+//══════════════
+//  ORDER FLOW INDICATOR (Bottom Left - Separate Display)
+//══════════════
+if show_flow
+    var table flow_table = table.new(position.bottom_left, 3, 4, border_width=1, frame_color=color.gray, border_color=color.gray)
+    
+    if barstate.islast
+        string t_size_flow = txt_size_tbl == "Tiny" ? size.tiny : txt_size_tbl == "Small" ? size.small : txt_size_tbl == "Normal" ? size.normal : size.large
+        
+        // Header
+        table.cell(flow_table, 0, 0, "ORDER FLOW", text_color=color.white, bgcolor=color.new(#2962FF, 30), text_size=size.normal)
+        table.merge_cells(flow_table, 0, 0, 2, 0)
+        
+        // Current value with color indicator
+        string flow_text = str.tostring(flow_pressure, "#.#") + "%"
+        // Color based on strength: Bright green (75+), green (50+), light green (20+), gray (neutral), light red, red, bright red
+        color flow_bg = flow_pressure > 75 ? color.new(#00E676, 40) : flow_pressure > 50 ? color.new(#00E676, 60) : flow_pressure > 20 ? color.new(#00E676, 80) : flow_pressure > -20 ? color.new(color.gray, 70) : flow_pressure > -50 ? color.new(#ff0000, 80) : flow_pressure > -75 ? color.new(#ff0000, 60) : color.new(#ff0000, 40)
+        
+        table.cell(flow_table, 0, 1, "Current:", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size_flow)
+        table.cell(flow_table, 1, 1, flow_text, text_color=color.white, bgcolor=flow_bg, text_size=size.large)
+        table.merge_cells(flow_table, 1, 1, 2, 1)
+        
+        // Status text
+        string flow_status = flow_pressure > 75 ? "🟢🟢 VERY STRONG BUY" : flow_pressure > 50 ? "🟢 Strong Buy" : flow_pressure > 20 ? "↗ Slight Buy" : flow_pressure > -20 ? "⟷ Neutral" : flow_pressure > -50 ? "↘ Slight Sell" : flow_pressure > -75 ? "🔴 Strong Sell" : "🔴🔴 VERY STRONG SELL"
+        
+        table.cell(flow_table, 0, 2, "Status:", text_color=color.white, bgcolor=#1a1a1a, text_size=t_size_flow)
+        table.cell(flow_table, 1, 2, flow_status, text_color=color.white, bgcolor=#1a1a1a, text_size=t_size_flow)
+        table.merge_cells(flow_table, 1, 2, 2, 2)
+        
+        // Color legend
+        table.cell(flow_table, 0, 3, "🟢 Buying", text_color=color.white, bgcolor=color.new(#00E676, 60), text_size=t_size_flow)
+        table.cell(flow_table, 1, 3, "⚪ Neutral", text_color=color.white, bgcolor=color.new(color.gray, 70), text_size=t_size_flow)
+        table.cell(flow_table, 2, 3, "🔴 Selling", text_color=color.white, bgcolor=color.new(#ff0000, 60), text_size=t_size_flow)
+
+//══════════════
+//  Order Flow Display (In Dashboard Only - No Chart Clutter)
+//══════════════
+// Order Flow is now shown ONLY in the dashboard table to keep chart clean
+// No plot lines to avoid cluttering the price chart
+
+//══════════════
+//  NEW: Buy/Sell Signal Visualization
+//══════════════
+// Buy Signal - using fixed size small (can be changed in code if needed)
+plotshape(show_signals and buy_signal, "BUY Signal", shape.triangleup, location.belowbar, color.new(#00E676, 0), size=size.small)
+
+// Sell Signal
+plotshape(show_signals and sell_signal, "SELL Signal", shape.triangledown, location.abovebar, color.new(#ff0000, 0), size=size.small)
+
+// Add labels with signal reasons (dynamic text works in labels)
+// Map signal_size to label size
+string lbl_size = signal_size == 1 ? size.tiny : signal_size == 2 ? size.small : signal_size == 3 ? size.normal : size.large
+
+if show_signals and buy_signal
+    label.new(bar_index, low, "BUY\n" + signal_reason, style=label.style_label_up, color=color.new(#00E676, 0), textcolor=color.white, size=lbl_size)
+
+if show_signals and sell_signal
+    label.new(bar_index, high, "SELL\n" + signal_reason, style=label.style_label_down, color=color.new(#ff0000, 0), textcolor=color.white, size=lbl_size)
+
+// Alert conditions - using str.tostring for proper conversion
+alertcondition(buy_signal, title="BUY Signal", message="🟢 BUY SIGNAL: {{ticker}} at {{close}}")
+alertcondition(sell_signal, title="SELL Signal", message="🔴 SELL SIGNAL: {{ticker}} at {{close}}")
+
+// Background color for active signals (optional subtle highlight)
+bgcolor(show_signals and buy_signal ? color.new(#00E676, 95) : na, title="Buy Signal BG")
+bgcolor(show_signals and sell_signal ? color.new(#ff0000, 95) : na, title="Sell Signal BG")
+
+//══════════════
+//  CURRENT PRICE MARKER (Helps locate chart when switching coins)
+//══════════════
+if show_price_line
+    // Draw prominent current price line
+    var line current_price_line = na
+    line.delete(current_price_line)
+    
+    // Determine color based on trend
+    color price_line_color = current_trend == "bullish" ? color.new(#00E676, 50) : current_trend == "bearish" ? color.new(#ff0000, 50) : color.new(#ffcd03, 50)
+    
+    // Draw line from recent history to future projection
+    current_price_line := line.new(bar_index - 10, close, bar_index + proj_len, close, xloc.bar_index, extend.none, price_line_color, line.style_solid, 3)
+    
+    // Add price label on right
+    var label current_price_label = na
+    label.delete(current_price_label)
+    
+    string price_text = "▶ " + str.tostring(close, format.mintick)
+    current_price_label := label.new(bar_index + proj_len - 5, close, price_text, xloc.bar_index, yloc.price, price_line_color, label.style_label_left, color.white, size.normal)
+
+//══════════════
+//  END OF ENHANCED INDICATOR
+//══════════════
+

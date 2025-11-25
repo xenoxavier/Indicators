@@ -1,0 +1,1088 @@
+//@version=5
+indicator("Every Hour 1st FVG vTDL", overlay=true, max_boxes_count=500, max_lines_count=500, dynamic_requests=true)
+
+
+
+//    ████████╗██████╗  █████╗ ██████╗ ███████╗███████╗                          
+//    ╚══██╔══╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝                          
+//       ██║   ██████╔╝███████║██║  ██║█████╗  ███████╗                          
+//       ██║   ██╔══██╗██╔══██║██║  ██║██╔══╝  ╚════██║                          
+//       ██║   ██║  ██║██║  ██║██████╔╝███████╗███████║                          
+//       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚══════╝                          
+//                                                                               
+//    ██████╗  ██████╗ ███╗   ██╗████████╗    ██╗     ██╗███████╗                
+//    ██╔══██╗██╔═══██╗████╗  ██║╚══██╔══╝    ██║     ██║██╔════╝                
+//    ██║  ██║██║   ██║██╔██╗ ██║   ██║       ██║     ██║█████╗                  
+//    ██║  ██║██║   ██║██║╚██╗██║   ██║       ██║     ██║██╔══╝                  
+//    ██████╔╝╚██████╔╝██║ ╚████║   ██║       ███████╗██║███████╗                
+//    ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝   ╚═╝       ╚══════╝╚═╝╚══════╝                
+//                                                                               
+//                                                                                                                                                         
+//                                                                               
+//                                                                               
+//    ███████╗██╗██████╗ ███████╗████████╗                                       
+//    ██╔════╝██║██╔══██╗██╔════╝╚══██╔══╝                                       
+//    █████╗  ██║██████╔╝███████╗   ██║                                          
+//    ██╔══╝  ██║██╔══██╗╚════██║   ██║                                          
+//    ██║     ██║██║  ██║███████║   ██║                                          
+//    ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝                                          
+//                                                                               
+//    ██████╗ ██████╗ ███████╗███████╗███████╗███╗   ██╗████████╗███████╗██████╗ 
+//    ██╔══██╗██╔══██╗██╔════╝██╔════╝██╔════╝████╗  ██║╚══██╔══╝██╔════╝██╔══██╗
+//    ██████╔╝██████╔╝█████╗  ███████╗█████╗  ██╔██╗ ██║   ██║   █████╗  ██║  ██║
+//    ██╔═══╝ ██╔══██╗██╔══╝  ╚════██║██╔══╝  ██║╚██╗██║   ██║   ██╔══╝  ██║  ██║
+//    ██║     ██║  ██║███████╗███████║███████╗██║ ╚████║   ██║   ███████╗██████╔╝
+//    ╚═╝     ╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═════╝ 
+//                                                                               
+//    ███████╗██╗   ██╗ ██████╗                                                  
+//    ██╔════╝██║   ██║██╔════╝                                                  
+//    █████╗  ██║   ██║██║  ███╗                                                 
+//    ██╔══╝  ╚██╗ ██╔╝██║   ██║                                                 
+//    ██║      ╚████╔╝ ╚██████╔╝                                                 
+//    ╚═╝       ╚═══╝   ╚═════╝                                                  
+//                                                                               
+                                                      
+
+
+
+
+
+// ============================================================================
+// INPUT GROUPS
+// ============================================================================
+
+// --- Detection Settings ---
+detectionType = input.string("FVG", "Detection Type",
+     options=["FVG", "Suspension FVG Blocks"],
+     group="Detection Settings",
+     tooltip="FVG: Just a FVG\nSuspension FVG Blocks: Requires VI on BOTH sides of FVG (I know its not a true sus block chill bro)")
+
+ltfResolution = input.string("1", "Lower Timeframe",
+     options=["15S", "1", "5"],
+     group="Detection Settings",
+     tooltip="Base timeframe for FVG detection. Use 5 on the 5min or 15min its sick bro")
+
+minFvgTickSize = input.int(4, "Min FVG Size (Ticks)", minval=1,
+     group="Detection Settings",
+     tooltip="Minimum gap size to qualify as FVG")
+
+// --- Display Settings ---
+hourlyDisplayMode = input.string("First Only", "Hourly Display Mode",
+     options=["First Only", "Show Both"],
+     group="Display Settings",
+     tooltip="First Only: Show whichever appears first (bull OR bear) per hour\nShow Both: Show first bullish AND first bearish per hour. I like both personally. Its a hidden PD array homie as confirmed by the man himself")
+
+bullColor = input.color(color.new(#2962FF, 75), "Bullish FVG Color",
+     group="Display Settings")
+
+bearColor = input.color(color.new(#FF1744, 75), "Bearish FVG Color",
+     group="Display Settings")
+
+bullFilledColor = input.color(color.new(#2962FF, 60), "Bullish Filled Portion Color",
+     group="Display Settings",
+     tooltip="Color for filled portion of bullish gaps in 'Fill Completely' mode")
+
+bearFilledColor = input.color(color.new(#FF1744, 60), "Bearish Filled Portion Color",
+     group="Display Settings",
+     tooltip="Color for filled portion of bearish gaps in 'Fill Completely' mode")
+
+showMidpoints = input.bool(true, "Show Midpoint Lines",
+     group="Display Settings",
+     tooltip="Display horizontal line at midpoint of each FVG box")
+
+midpointColor = input.color(color.new(color.black, 0), "Midpoint Line Color",
+     group="Display Settings")
+
+labelTextColor = input.color(color.black, "Label Text Color",
+     group="Display Settings",
+     tooltip="Color for text on extended box labels")
+
+showUnfilledGaps = input.bool(true, "Show Unfilled Breakaway Gaps",
+     group="Display Settings",
+     tooltip="Extend boxes until price trades back into the FVG zone")
+
+showOnlyToday = input.bool(false, "Show Only Today's Boxes",
+     group="Display Settings",
+     tooltip="Use this to show more breakaway gaps or only boxes from today")
+
+gapFillMode = input.string("Touch Box", "Gap Fill Detection Mode",
+     options=["Touch Box", "Touch Midpoint", "Fill Completely"],
+     group="Display Settings",
+     tooltip="Touch Box: Stops when price enters gap\nTouch Midpoint: Stops when price reaches midpoint\nFill Completely: Stops when price completely fills gap, shows visual fill progress")
+
+midpointStyle = input.string("Solid", "Midpoint Line Style",
+     options=["Solid", "Dotted", "Dashed"],
+     group="Display Settings",
+     tooltip="Visual style of the midpoint line")
+
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+// Fixed to America/New_York timezone
+string sessionTimezone = "America/New_York"
+
+// Convert midpoint style string to line style constant
+midpointStyleConverted =
+     midpointStyle == "Solid" ? line.style_solid :
+     midpointStyle == "Dotted" ? line.style_dotted :
+     line.style_dashed
+
+
+// ============================================================================
+// STATE VARIABLES
+// ============================================================================
+
+// Hourly FVG tracking flags
+var bool currentHourBullFound = false
+var bool currentHourBearFound = false
+
+// Hour change detection
+var int lastHour = na
+
+// Box storage arrays (up to 500 boxes total)
+var array<box> bullBoxes = array.new<box>()
+var array<box> bearBoxes = array.new<box>()
+
+// Midpoint line storage arrays (1:1 with box arrays)
+var array<line> bullMidLines = array.new<line>()
+var array<line> bearMidLines = array.new<line>()
+
+// Filled status tracking arrays (1:1 with box arrays)
+var array<bool> bullBoxFilled = array.new<bool>()
+var array<bool> bearBoxFilled = array.new<bool>()
+
+// Was hit during formation hour flag (1:1 with box arrays)
+var array<bool> bullBoxWasHit = array.new<bool>()
+var array<bool> bearBoxWasHit = array.new<bool>()
+
+// Formation hour processed flag (1:1 with box arrays)
+var array<bool> bullBoxProcessed = array.new<bool>()
+var array<bool> bearBoxProcessed = array.new<bool>()
+
+// Box boundary tracking arrays (1:1 with box arrays)
+var array<float> bullBoxTop = array.new<float>()
+var array<float> bullBoxBot = array.new<float>()
+var array<float> bearBoxTop = array.new<float>()
+var array<float> bearBoxBot = array.new<float>()
+
+// Box formation time tracking (1:1 with box arrays)
+var array<int> bullBoxTime = array.new<int>()
+var array<int> bearBoxTime = array.new<int>()
+
+// Box confirmation time (time when FVG was detected, don't check before this)
+var array<int> bullBoxConfirmTime = array.new<int>()
+var array<int> bearBoxConfirmTime = array.new<int>()
+
+// Box hour end time (1:1 with box arrays) - stores the hour end when box was created
+var array<int> bullBoxHourEnd = array.new<int>()
+var array<int> bearBoxHourEnd = array.new<int>()
+
+// Label storage arrays for extended boxes (1:1 with box arrays)
+var array<label> bullBoxLabels = array.new<label>()
+var array<label> bearBoxLabels = array.new<label>()
+
+// Fill progress tracking for "Fill Completely" mode (1:1 with box arrays)
+var array<float> bullBoxLowestPrice = array.new<float>()  // Tracks lowest price reached in bullish gaps
+var array<float> bearBoxHighestPrice = array.new<float>() // Tracks highest price reached in bearish gaps
+
+// Overlay box storage for visual fill feedback (1:1 with box arrays)
+var array<box> bullBoxOverlays = array.new<box>()
+var array<box> bearBoxOverlays = array.new<box>()
+
+// For higher timeframe: Store last 2 LTF candles from previous bar
+var float prev1LTFCandleH = na
+var float prev1LTFCandleL = na
+var float prev2LTFCandleH = na
+var float prev2LTFCandleL = na
+var int prev1LTFCandleT = na
+var int prev2LTFCandleT = na
+
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// 🔧 FUTURE EXTENSION POINT: Add detection type variations here
+// To add "Body to Body" detection: Add else-if branch with body logic
+//
+// detectFvg() - Modular FVG detection function
+// Returns: [isBull, isBear, bullTop, bullBot, bearTop, bearBot]
+//
+// Parameters:
+//   detectionType: "Wick to Wick" (future: "Body to Body", etc.)
+//   h0, h1, h2: high values for candles [0], [1], [2]
+//   l0, l1, l2: low values for candles [0], [1], [2]
+//   c0, c1, c2: close values for candles [0], [1], [2]
+//   o0, o1, o2: open values for candles [0], [1], [2]
+//   minGap: minimum gap size in price units
+//
+detectFvg(string detectionType, float h0, float h1, float h2, float l0, float l1, float l2,
+          float c0, float c1, float c2, float o0, float o1, float o2, float minGap) =>
+    bool isBull = false
+    bool isBear = false
+    float bullTop = 0.0
+    float bullBot = 0.0
+    float bearTop = 0.0
+    float bearBot = 0.0
+
+    if detectionType == "FVG"
+        // Bullish FVG: Gap between candle [2]'s high and candle [0]'s low
+        // Pattern: high[2] < low[0]
+        isBull := h2 < l0 and (l0 - h2) >= minGap
+        bullTop := l0        // Top of gap (bottom of current candle)
+        bullBot := h2        // Bottom of gap (top of candle 2)
+
+        // Check for volume imbalance (body gap) on bullish FVG - OUTSIDE PRINTS ONLY
+        if isBull
+            // Calculate body boundaries for each candle
+            float body2Top = math.max(c2, o2)
+            float body2Bot = math.min(c2, o2)
+            float body1Top = math.max(c1, o1)
+            float body1Bot = math.min(c1, o1)
+            float body0Top = math.max(c0, o0)
+            float body0Bot = math.min(c0, o0)
+
+            // Check gap between candle 2 and candle 1 - bodies NOT touching (outside print)
+            if body2Top < body1Bot
+                bullBot := body2Top  // Extend bottom to top of candle 2's body
+
+            // Check gap between candle 1 and candle 0 - bodies NOT touching (outside print)
+            if body1Top < body0Bot
+                bullTop := body0Bot  // Extend top to bottom of candle 0's body
+
+        // Bearish FVG: Gap between candle [2]'s low and candle [0]'s high
+        // Pattern: low[2] > high[0]
+        isBear := l2 > h0 and (l2 - h0) >= minGap
+        bearTop := l2        // Top of gap (bottom of candle 2)
+        bearBot := h0        // Bottom of gap (top of current candle)
+
+        // Check for volume imbalance (body gap) on bearish FVG - OUTSIDE PRINTS ONLY
+        if isBear
+            // Calculate body boundaries for each candle
+            float body2Top = math.max(c2, o2)
+            float body2Bot = math.min(c2, o2)
+            float body1Top = math.max(c1, o1)
+            float body1Bot = math.min(c1, o1)
+            float body0Top = math.max(c0, o0)
+            float body0Bot = math.min(c0, o0)
+
+            // Check gap between candle 2 and candle 1 - bodies NOT touching (outside print)
+            if body2Bot > body1Top
+                bearTop := body2Bot  // Extend top to bottom of candle 2's body
+
+            // Check gap between candle 1 and candle 0 - bodies NOT touching (outside print)
+            if body1Bot > body0Top
+                bearBot := body0Top  // Extend bottom to top of candle 0's body
+
+    else if detectionType == "Suspension FVG Blocks"
+        // Suspension FVG Blocks: Requires outside print on BOTH sides
+        // Same base detection as Wick to Wick, but BOTH body gaps must be present
+
+        // Bullish FVG: Gap between candle [2]'s high and candle [0]'s low
+        isBull := h2 < l0 and (l0 - h2) >= minGap
+        bullTop := l0
+        bullBot := h2
+
+        if isBull
+            // Calculate body boundaries
+            float body2Top = math.max(c2, o2)
+            float body2Bot = math.min(c2, o2)
+            float body1Top = math.max(c1, o1)
+            float body1Bot = math.min(c1, o1)
+            float body0Top = math.max(c0, o0)
+            float body0Bot = math.min(c0, o0)
+
+            // Check for BOTH outside prints
+            bool outsidePrint_2_1 = body2Top < body1Bot  // Gap between candle 2 and 1
+            bool outsidePrint_1_0 = body1Top < body0Bot  // Gap between candle 1 and 0
+
+            // Only valid if BOTH outside prints exist
+            if outsidePrint_2_1 and outsidePrint_1_0
+                bullBot := body2Top  // Extend bottom to top of candle 2's body
+                bullTop := body0Bot  // Extend top to bottom of candle 0's body
+            else
+                // If we don't have both outside prints, this is not a valid suspension FVG
+                isBull := false
+
+        // Bearish FVG: Gap between candle [2]'s low and candle [0]'s high
+        isBear := l2 > h0 and (l2 - h0) >= minGap
+        bearTop := l2
+        bearBot := h0
+
+        if isBear
+            // Calculate body boundaries
+            float body2Top = math.max(c2, o2)
+            float body2Bot = math.min(c2, o2)
+            float body1Top = math.max(c1, o1)
+            float body1Bot = math.min(c1, o1)
+            float body0Top = math.max(c0, o0)
+            float body0Bot = math.min(c0, o0)
+
+            // Check for BOTH outside prints
+            bool outsidePrint_2_1 = body2Bot > body1Top  // Gap between candle 2 and 1
+            bool outsidePrint_1_0 = body1Bot > body0Top  // Gap between candle 1 and 0
+
+            // Only valid if BOTH outside prints exist
+            if outsidePrint_2_1 and outsidePrint_1_0
+                bearTop := body2Bot  // Extend top to bottom of candle 2's body
+                bearBot := body0Top  // Extend bottom to top of candle 0's body
+            else
+                // If we don't have both outside prints, this is not a valid suspension FVG
+                isBear := false
+
+    // 🔧 FUTURE: Add "Body to Body" detection here
+    // Example structure:
+    // else if detectionType == "Body to Body"
+    //     // Calculate body tops and bottoms
+    //     float body0Top = math.max(c0, o0)
+    //     float body0Bot = math.min(c0, o0)
+    //     float body2Top = math.max(c2, o2)
+    //     float body2Bot = math.min(c2, o2)
+    //
+    //     // Check for gaps between bodies
+    //     isBull := body2Top < body0Bot and (body0Bot - body2Top) >= minGap
+    //     bullTop := body0Bot
+    //     bullBot := body2Top
+    //
+    //     isBear := body2Bot > body0Top and (body2Bot - body0Top) >= minGap
+    //     bearTop := body2Bot
+    //     bearBot := body0Top
+
+    [isBull, isBear, bullTop, bullBot, bearTop, bearBot]
+
+
+// getHourEndTime() - Calculate end of hour for a given timestamp
+// Returns timestamp for the next hour mark (e.g., 6:00 AM FVG extends until 7:00 AM)
+getHourEndTime(int t, string tz) =>
+    int hourStart = timestamp(tz, year(t, tz), month(t, tz), dayofmonth(t, tz), hour(t, tz), 0, 0)
+    hourStart + 3600000  // Add 1 full hour (60 minutes) in milliseconds
+
+
+// ============================================================================
+// HOUR CHANGE DETECTION
+// ============================================================================
+
+// Detect hour changes
+int currentHour = hour(time, sessionTimezone)
+bool isNewHour = na(lastHour) or currentHour != lastHour
+
+// Check if we're in weekend closed period
+int currentDayOfWeek = dayofweek(time, sessionTimezone)
+bool isWeekendClosed = currentDayOfWeek == dayofweek.saturday or (currentDayOfWeek == dayofweek.sunday and currentHour < 18)
+
+if isNewHour
+    // Update last hour tracker
+    lastHour := currentHour
+
+    // Reset hourly tracking flags
+    currentHourBullFound := false
+    currentHourBearFound := false
+
+
+// ============================================================================
+// TIMEFRAME DETECTION & PROCESSING
+// ============================================================================
+
+// Calculate minimum gap value
+float minTickValue = minFvgTickSize * syminfo.mintick
+
+// Check if chart timeframe matches selected lower timeframe
+bool isChartBaseTF = timeframe.period == ltfResolution
+
+// Variables for FVG detection results
+bool isBullishFvg = false
+bool isBearishFvg = false
+float fvgBullTop = 0.0
+float fvgBullBot = 0.0
+float fvgBearTop = 0.0
+float fvgBearBot = 0.0
+int fvgFormationTime = 0
+int fvgFormationBarIndex = 0
+
+
+// ============================================================================
+// BRANCH 1: CHART TIMEFRAME = BASE TIMEFRAME
+// ============================================================================
+
+if isChartBaseTF
+    // Direct detection using current chart's OHLC data
+    // Call modular detection function
+    [isBull, isBear, bTop, bBot, rTop, rBot] = detectFvg(detectionType, high[0], high[1], high[2], low[0], low[1], low[2], close[0], close[1], close[2], open[0], open[1], open[2], minTickValue)
+
+    // Check ALL three candles' hours to ensure none are from hours 16 or 17
+    int oldestHour = hour(time[2], sessionTimezone)
+    int middleHour = hour(time[1], sessionTimezone)
+    int confirmHour = hour(time[0], sessionTimezone)
+
+    // Store bull FVG if detected AND middle candle is in current hour AND no candles from hours 16 or 17
+    if isBull and middleHour == currentHour and oldestHour != 16 and oldestHour != 17 and middleHour != 16 and middleHour != 17 and confirmHour != 16 and confirmHour != 17
+        // In "Show Both" mode, always store bull
+        // In "First Only" mode, only store bull if we haven't found ANY FVG yet
+        if hourlyDisplayMode == "Show Both" or not isBearishFvg
+            isBullishFvg := isBull
+            fvgBullTop := bTop
+            fvgBullBot := bBot
+            fvgFormationTime := time[2]  // Oldest candle in sequence
+            fvgFormationBarIndex := bar_index[2]
+
+    // Store bear FVG if detected AND middle candle is in current hour AND no candles from hours 16 or 17
+    if isBear and middleHour == currentHour and oldestHour != 16 and oldestHour != 17 and middleHour != 16 and middleHour != 17 and confirmHour != 16 and confirmHour != 17
+        // In "Show Both" mode, always store bear
+        // In "First Only" mode, only store bear if we haven't found ANY FVG yet
+        if hourlyDisplayMode == "Show Both" or not isBullishFvg
+            isBearishFvg := isBear
+            fvgBearTop := rTop
+            fvgBearBot := rBot
+            fvgFormationTime := time[2]  // Oldest candle in sequence
+            fvgFormationBarIndex := bar_index[2]
+
+
+// ============================================================================
+// BRANCH 2: CHART TIMEFRAME > BASE TIMEFRAME
+// ============================================================================
+
+else
+    // Use request.security_lower_tf to fetch lower timeframe data
+    [ltfTime, ltfHigh, ltfLow, ltfClose, ltfOpen] = request.security_lower_tf(syminfo.tickerid, ltfResolution, [time, high, low, close, open])
+
+    // Build combined arrays: previous 2 LTF candles + current bar's LTF candles
+    // This maintains continuity across HTF bar boundaries for FVG detection
+    var int[] combinedTime = array.new_int()
+    var float[] combinedHigh = array.new_float()
+    var float[] combinedLow = array.new_float()
+    var float[] combinedClose = array.new_float()
+    var float[] combinedOpen = array.new_float()
+
+    array.clear(combinedTime)
+    array.clear(combinedHigh)
+    array.clear(combinedLow)
+    array.clear(combinedClose)
+    array.clear(combinedOpen)
+
+    // Add previous bar's last 2 LTF candles (if available)
+    if not na(prev2LTFCandleT)
+        array.push(combinedTime, prev2LTFCandleT)
+        array.push(combinedHigh, prev2LTFCandleH)
+        array.push(combinedLow, prev2LTFCandleL)
+        array.push(combinedClose, na)  // Not needed for wick-to-wick, but structure consistency
+        array.push(combinedOpen, na)
+
+    if not na(prev1LTFCandleT)
+        array.push(combinedTime, prev1LTFCandleT)
+        array.push(combinedHigh, prev1LTFCandleH)
+        array.push(combinedLow, prev1LTFCandleL)
+        array.push(combinedClose, na)
+        array.push(combinedOpen, na)
+
+    // Track where current bar's LTF data starts in combined array
+    int currentBarStartIdx = array.size(combinedTime)
+
+    // Add current bar's LTF candles
+    if not na(ltfTime) and array.size(ltfTime) > 0
+        for i = 0 to array.size(ltfTime) - 1
+            array.push(combinedTime, array.get(ltfTime, i))
+            array.push(combinedHigh, array.get(ltfHigh, i))
+            array.push(combinedLow, array.get(ltfLow, i))
+            array.push(combinedClose, array.get(ltfClose, i))
+            array.push(combinedOpen, array.get(ltfOpen, i))
+
+    // Store last 2 candles for next bar
+    int fetchedSize = not na(ltfTime) ? array.size(ltfTime) : 0
+    if fetchedSize >= 2
+        prev1LTFCandleT := array.get(ltfTime, fetchedSize - 1)
+        prev1LTFCandleH := array.get(ltfHigh, fetchedSize - 1)
+        prev1LTFCandleL := array.get(ltfLow, fetchedSize - 1)
+        prev2LTFCandleT := array.get(ltfTime, fetchedSize - 2)
+        prev2LTFCandleH := array.get(ltfHigh, fetchedSize - 2)
+        prev2LTFCandleL := array.get(ltfLow, fetchedSize - 2)
+    else if fetchedSize == 1
+        prev1LTFCandleT := array.get(ltfTime, fetchedSize - 1)
+        prev1LTFCandleH := array.get(ltfHigh, fetchedSize - 1)
+        prev1LTFCandleL := array.get(ltfLow, fetchedSize - 1)
+
+    // Loop through combined LTF data looking for FVGs
+    int combinedSize = array.size(combinedTime)
+
+    if combinedSize >= 3
+        // Check each possible 3-candle pattern
+        for i = 2 to combinedSize - 1
+            // Get candle data for indices [i-2], [i-1], [i]
+            int oldestCandleTime = array.get(combinedTime, i - 2)  // Oldest candle in sequence
+            int middleCandleTime = array.get(combinedTime, i - 1)  // Middle candle in sequence
+            int confirmTime = array.get(combinedTime, i)  // When FVG confirms
+
+            // CRITICAL: Only process NEW patterns where confirmation candle is from current bar
+            // This prevents re-detecting old FVGs on weekends and day rollovers
+            if i >= currentBarStartIdx
+                // IMPORTANT: Only process candles that belong to the CURRENT HOUR
+                // Check ALL three candles' hours to ensure none are from hours 16 or 17
+                int oldestHour = hour(oldestCandleTime, sessionTimezone)
+                int middleHour = hour(middleCandleTime, sessionTimezone)
+                int confirmHour = hour(confirmTime, sessionTimezone)
+
+                // Only count as "first FVG of the hour" if:
+                // - The middle candle is in current hour
+                // - Current hour is not 16 or 17
+                // - NONE of the three candles are from hours 16 or 17
+                if middleHour == currentHour and currentHour != 16 and currentHour != 17 and oldestHour != 16 and oldestHour != 17 and middleHour != 16 and middleHour != 17 and confirmHour != 16 and confirmHour != 17
+                    // Process each LTF candle
+                    // Get OHLC for 3-candle pattern
+                    float h0 = array.get(combinedHigh, i)
+                    float h1 = array.get(combinedHigh, i - 1)
+                    float h2 = array.get(combinedHigh, i - 2)
+                    float l0 = array.get(combinedLow, i)
+                    float l1 = array.get(combinedLow, i - 1)
+                    float l2 = array.get(combinedLow, i - 2)
+                    float c0 = array.get(combinedClose, i)
+                    float c1 = array.get(combinedClose, i - 1)
+                    float c2 = array.get(combinedClose, i - 2)
+                    float o0 = array.get(combinedOpen, i)
+                    float o1 = array.get(combinedOpen, i - 1)
+                    float o2 = array.get(combinedOpen, i - 2)
+
+                    // Call detection function
+                    [isBull, isBear, bTop, bBot, rTop, rBot] = detectFvg(detectionType, h0, h1, h2, l0, l1, l2, c0, c1, c2, o0, o1, o2, minTickValue)
+
+                    // If FVG detected and we haven't plotted yet, store it
+                    if isBull and not isBullishFvg
+                        // In "Show Both" mode, always store first bull
+                        // In "First Only" mode, only store bull if we haven't found ANY FVG yet
+                        if hourlyDisplayMode == "Show Both" or not isBearishFvg
+                            isBullishFvg := true
+                            fvgBullTop := bTop
+                            fvgBullBot := bBot
+                            fvgFormationTime := middleCandleTime  // Use middle candle time to align HTF display
+
+                    if isBear and not isBearishFvg
+                        // In "Show Both" mode, always store first bear
+                        // In "First Only" mode, only store bear if we haven't found ANY FVG yet
+                        if hourlyDisplayMode == "Show Both" or not isBullishFvg
+                            isBearishFvg := true
+                            fvgBearTop := rTop
+                            fvgBearBot := rBot
+                            fvgFormationTime := middleCandleTime  // Use middle candle time to align HTF display
+
+
+// ============================================================================
+// DISPLAY PERMISSION LOGIC
+// ============================================================================
+
+// Determine if we're allowed to plot this FVG based on hourly display mode
+bool plotPermissionBull = true
+bool plotPermissionBear = true
+
+if hourlyDisplayMode == "First Only"
+    // Only show the very first FVG (either bull or bear) per hour
+    if currentHourBullFound or currentHourBearFound
+        plotPermissionBull := false
+        plotPermissionBear := false
+else  // "Show Both"
+    // Show first bullish AND first bearish independently per hour
+    if currentHourBullFound
+        plotPermissionBull := false
+    if currentHourBearFound
+        plotPermissionBear := false
+
+
+// ============================================================================
+// BOX CREATION & MANAGEMENT
+// ============================================================================
+
+// Create boxes when FVG is detected and permission granted
+if isChartBaseTF
+    // Chart timeframe = Base timeframe: Use time coordinates for consistency
+
+    // Check formation hour to exclude boxes using candles from hours 16 or 17
+    int formationHour = hour(fvgFormationTime, sessionTimezone)
+
+    if isBullishFvg and plotPermissionBull and not currentHourBullFound and currentHour != 16 and currentHour != 17 and formationHour != 16 and formationHour != 17 and not isWeekendClosed
+        int boxRightEdge = getHourEndTime(time, sessionTimezone)
+        box newBullBox = box.new(left = fvgFormationTime, top = fvgBullTop, right = boxRightEdge, bottom = fvgBullBot, bgcolor = bullColor, border_color = bullColor, border_width = 1, xloc = xloc.bar_time)
+        array.push(bullBoxes, newBullBox)
+
+        // Track boundaries, filled status, formation time, and hit count
+        array.push(bullBoxTop, fvgBullTop)
+        array.push(bullBoxBot, fvgBullBot)
+        array.push(bullBoxFilled, false)
+        array.push(bullBoxTime, fvgFormationTime)
+        array.push(bullBoxConfirmTime, time)  // Current time when FVG was detected
+        array.push(bullBoxHourEnd, boxRightEdge)  // Store the hour end time
+        array.push(bullBoxLabels, na)  // Label will be created in extension logic
+        array.push(bullBoxWasHit, false)  // Initialize to not hit
+        array.push(bullBoxProcessed, false)  // Initialize to not processed
+        array.push(bullBoxLowestPrice, fvgBullTop)  // Initialize to top of gap
+        array.push(bullBoxOverlays, na)  // Overlay box will be created if needed
+
+        // Add midpoint line
+        if showMidpoints
+            float bullMid = (fvgBullTop + fvgBullBot) / 2.0
+            line newMidLine = line.new(fvgFormationTime, bullMid, boxRightEdge, bullMid, color=midpointColor, style=midpointStyleConverted, width=1, xloc=xloc.bar_time)
+            array.push(bullMidLines, newMidLine)
+
+        currentHourBullFound := true
+        // For "First Only" mode, mark both as found once we create either box
+        if hourlyDisplayMode == "First Only"
+            currentHourBearFound := true
+
+    if isBearishFvg and plotPermissionBear and not currentHourBearFound and currentHour != 16 and currentHour != 17 and formationHour != 16 and formationHour != 17 and not isWeekendClosed
+        int boxRightEdge = getHourEndTime(time, sessionTimezone)
+        box newBearBox = box.new(left = fvgFormationTime, top = fvgBearTop, right = boxRightEdge, bottom = fvgBearBot, bgcolor = bearColor, border_color = bearColor, border_width = 1, xloc = xloc.bar_time)
+        array.push(bearBoxes, newBearBox)
+
+        // Track boundaries, filled status, formation time, and hit count
+        array.push(bearBoxTop, fvgBearTop)
+        array.push(bearBoxBot, fvgBearBot)
+        array.push(bearBoxFilled, false)
+        array.push(bearBoxTime, fvgFormationTime)
+        array.push(bearBoxConfirmTime, time)  // Current time when FVG was detected
+        array.push(bearBoxHourEnd, boxRightEdge)  // Store the hour end time
+        array.push(bearBoxLabels, na)  // Label will be created in extension logic
+        array.push(bearBoxWasHit, false)  // Initialize to not hit
+        array.push(bearBoxProcessed, false)  // Initialize to not processed
+        array.push(bearBoxHighestPrice, fvgBearBot)  // Initialize to bottom of gap
+        array.push(bearBoxOverlays, na)  // Overlay box will be created if needed
+
+        // Add midpoint line
+        if showMidpoints
+            float bearMid = (fvgBearTop + fvgBearBot) / 2.0
+            line newMidLine = line.new(fvgFormationTime, bearMid, boxRightEdge, bearMid, color=midpointColor, style=midpointStyleConverted, width=1, xloc=xloc.bar_time)
+            array.push(bearMidLines, newMidLine)
+
+        currentHourBearFound := true
+        // For "First Only" mode, mark both as found once we create either box
+        if hourlyDisplayMode == "First Only"
+            currentHourBullFound := true
+
+else
+    // Chart timeframe > Base timeframe: Use time coordinates (xloc.bar_time)
+
+    // Check formation hour to exclude boxes using candles from hours 16 or 17
+    int formationHour = hour(fvgFormationTime, sessionTimezone)
+
+    if isBullishFvg and plotPermissionBull and not currentHourBullFound and currentHour != 16 and currentHour != 17 and formationHour != 16 and formationHour != 17 and not isWeekendClosed
+        int boxRightEdge = getHourEndTime(time, sessionTimezone)
+        box newBullBox = box.new(left = fvgFormationTime, top = fvgBullTop, right = boxRightEdge, bottom = fvgBullBot, bgcolor = bullColor, border_color = bullColor, border_width = 1, xloc = xloc.bar_time)
+        array.push(bullBoxes, newBullBox)
+
+        // Track boundaries, filled status, formation time, and hit count
+        array.push(bullBoxTop, fvgBullTop)
+        array.push(bullBoxBot, fvgBullBot)
+        array.push(bullBoxFilled, false)
+        array.push(bullBoxTime, fvgFormationTime)
+        array.push(bullBoxConfirmTime, time)  // Current time when FVG was detected
+        array.push(bullBoxHourEnd, boxRightEdge)  // Store the hour end time
+        array.push(bullBoxLabels, na)  // Label will be created in extension logic
+        array.push(bullBoxWasHit, false)  // Initialize to not hit
+        array.push(bullBoxProcessed, false)  // Initialize to not processed
+        array.push(bullBoxLowestPrice, fvgBullTop)  // Initialize to top of gap
+        array.push(bullBoxOverlays, na)  // Overlay box will be created if needed
+
+        // Add midpoint line
+        if showMidpoints
+            float bullMid = (fvgBullTop + fvgBullBot) / 2.0
+            line newMidLine = line.new(fvgFormationTime, bullMid, boxRightEdge, bullMid, color=midpointColor, style=midpointStyleConverted, width=1, xloc=xloc.bar_time)
+            array.push(bullMidLines, newMidLine)
+
+        currentHourBullFound := true
+        // For "First Only" mode, mark both as found once we create either box
+        if hourlyDisplayMode == "First Only"
+            currentHourBearFound := true
+
+    if isBearishFvg and plotPermissionBear and not currentHourBearFound and currentHour != 16 and currentHour != 17 and formationHour != 16 and formationHour != 17 and not isWeekendClosed
+        int boxRightEdge = getHourEndTime(time, sessionTimezone)
+        box newBearBox = box.new(left = fvgFormationTime, top = fvgBearTop, right = boxRightEdge, bottom = fvgBearBot, bgcolor = bearColor, border_color = bearColor, border_width = 1, xloc = xloc.bar_time)
+        array.push(bearBoxes, newBearBox)
+
+        // Track boundaries, filled status, formation time, and hit count
+        array.push(bearBoxTop, fvgBearTop)
+        array.push(bearBoxBot, fvgBearBot)
+        array.push(bearBoxFilled, false)
+        array.push(bearBoxTime, fvgFormationTime)
+        array.push(bearBoxConfirmTime, time)  // Current time when FVG was detected
+        array.push(bearBoxHourEnd, boxRightEdge)  // Store the hour end time
+        array.push(bearBoxLabels, na)  // Label will be created in extension logic
+        array.push(bearBoxWasHit, false)  // Initialize to not hit
+        array.push(bearBoxProcessed, false)  // Initialize to not processed
+        array.push(bearBoxHighestPrice, fvgBearBot)  // Initialize to bottom of gap
+        array.push(bearBoxOverlays, na)  // Overlay box will be created if needed
+
+        // Add midpoint line
+        if showMidpoints
+            float bearMid = (fvgBearTop + fvgBearBot) / 2.0
+            line newMidLine = line.new(fvgFormationTime, bearMid, boxRightEdge, bearMid, color=midpointColor, style=midpointStyleConverted, width=1, xloc=xloc.bar_time)
+            array.push(bearMidLines, newMidLine)
+
+        currentHourBearFound := true
+        // For "First Only" mode, mark both as found once we create either box
+        if hourlyDisplayMode == "First Only"
+            currentHourBullFound := true
+
+
+// ============================================================================
+// BOX EXTENSION & FILL DETECTION
+// ============================================================================
+
+// Hide hourly boundary boxes that aren't from today when "Show Only Today" is enabled
+if showOnlyToday
+    // Calculate today's trading session boundaries (18:00 yesterday to 16:00 today)
+    int currentYear = year(time, sessionTimezone)
+    int currentMonth = month(time, sessionTimezone)
+    int currentDay = dayofmonth(time, sessionTimezone)
+    int currentHourCheck = hour(time, sessionTimezone)
+
+    // If current time is before 18:00, "today's session" started yesterday at 18:00
+    // If current time is 18:00 or after, "today's session" started today at 18:00
+    int sessionStartYear = currentYear
+    int sessionStartMonth = currentMonth
+    int sessionStartDay = currentDay
+
+    if currentHourCheck < 18
+        // Session started yesterday at 18:00
+        int yesterdayTimestamp = time - 86400000  // Subtract 24 hours
+        sessionStartYear := year(yesterdayTimestamp, sessionTimezone)
+        sessionStartMonth := month(yesterdayTimestamp, sessionTimezone)
+        sessionStartDay := dayofmonth(yesterdayTimestamp, sessionTimezone)
+
+    int sessionStartTime = timestamp(sessionTimezone, sessionStartYear, sessionStartMonth, sessionStartDay, 18, 0, 0)
+    int sessionEndTime = timestamp(sessionTimezone, currentYear, currentMonth, currentDay, 16, 0, 0)
+
+    // If current time is past 16:00, session end is today, otherwise yesterday
+    if currentHourCheck < 18
+        sessionEndTime := sessionEndTime  // Today at 16:00
+    else
+        // Tomorrow at 16:00
+        int tomorrowTimestamp = time + 86400000
+        int tomorrowYear = year(tomorrowTimestamp, sessionTimezone)
+        int tomorrowMonth = month(tomorrowTimestamp, sessionTimezone)
+        int tomorrowDay = dayofmonth(tomorrowTimestamp, sessionTimezone)
+        sessionEndTime := timestamp(sessionTimezone, tomorrowYear, tomorrowMonth, tomorrowDay, 16, 0, 0)
+
+    // Clean up bullish boxes
+    if array.size(bullBoxes) > 0
+        for i = array.size(bullBoxes) - 1 to 0
+            int boxFormationTime = array.get(bullBoxTime, i)
+            int boxHourEnd = array.get(bullBoxHourEnd, i)
+            box currentBox = array.get(bullBoxes, i)
+            int boxRightEdge = box.get_right(currentBox)
+
+            // Check if box is still at hour boundary (not extending)
+            // Boxes that extend have boxRightEdge > boxHourEnd
+            bool isAtHourBoundary = boxRightEdge <= boxHourEnd
+
+            // Hide boxes at hour boundary that are outside today's trading session
+            // Always keep extending boxes (they've gone past hour boundary)
+            if isAtHourBoundary and (boxFormationTime < sessionStartTime or boxFormationTime >= sessionEndTime)
+                box.delete(array.get(bullBoxes, i))
+                array.remove(bullBoxes, i)
+                array.remove(bullBoxTop, i)
+                array.remove(bullBoxBot, i)
+                array.remove(bullBoxFilled, i)
+                array.remove(bullBoxTime, i)
+                array.remove(bullBoxConfirmTime, i)
+                array.remove(bullBoxHourEnd, i)
+                array.remove(bullBoxWasHit, i)
+                array.remove(bullBoxProcessed, i)
+                array.remove(bullBoxLowestPrice, i)
+
+                label currentLabel = array.get(bullBoxLabels, i)
+                if not na(currentLabel)
+                    label.delete(currentLabel)
+                array.remove(bullBoxLabels, i)
+
+                box overlayBox = array.get(bullBoxOverlays, i)
+                if not na(overlayBox)
+                    box.delete(overlayBox)
+                array.remove(bullBoxOverlays, i)
+
+                if i < array.size(bullMidLines)
+                    line midLine = array.get(bullMidLines, i)
+                    if not na(midLine)
+                        line.delete(midLine)
+                    array.remove(bullMidLines, i)
+
+    // Clean up bearish boxes
+    if array.size(bearBoxes) > 0
+        for i = array.size(bearBoxes) - 1 to 0
+            int boxFormationTime = array.get(bearBoxTime, i)
+            int boxHourEnd = array.get(bearBoxHourEnd, i)
+            box currentBox = array.get(bearBoxes, i)
+            int boxRightEdge = box.get_right(currentBox)
+
+            // Check if box is still at hour boundary (not extending)
+            // Boxes that extend have boxRightEdge > boxHourEnd
+            bool isAtHourBoundary = boxRightEdge <= boxHourEnd
+
+            // Hide boxes at hour boundary that are outside today's trading session
+            // Always keep extending boxes (they've gone past hour boundary)
+            if isAtHourBoundary and (boxFormationTime < sessionStartTime or boxFormationTime >= sessionEndTime)
+                box.delete(array.get(bearBoxes, i))
+                array.remove(bearBoxes, i)
+                array.remove(bearBoxTop, i)
+                array.remove(bearBoxBot, i)
+                array.remove(bearBoxFilled, i)
+                array.remove(bearBoxTime, i)
+                array.remove(bearBoxConfirmTime, i)
+                array.remove(bearBoxHourEnd, i)
+                array.remove(bearBoxWasHit, i)
+                array.remove(bearBoxProcessed, i)
+                array.remove(bearBoxHighestPrice, i)
+
+                label currentLabel = array.get(bearBoxLabels, i)
+                if not na(currentLabel)
+                    label.delete(currentLabel)
+                array.remove(bearBoxLabels, i)
+
+                box overlayBox = array.get(bearBoxOverlays, i)
+                if not na(overlayBox)
+                    box.delete(overlayBox)
+                array.remove(bearBoxOverlays, i)
+
+                if i < array.size(bearMidLines)
+                    line midLine = array.get(bearMidLines, i)
+                    if not na(midLine)
+                        line.delete(midLine)
+                    array.remove(bearMidLines, i)
+
+// Only run if the "Show Unfilled Breakaway Gaps" toggle is enabled
+if showUnfilledGaps
+    // Process bullish boxes
+    if array.size(bullBoxes) > 0
+        for i = 0 to array.size(bullBoxes) - 1
+            bool isFilled = array.get(bullBoxFilled, i)
+
+            // Skip boxes that are already filled
+            if isFilled
+                continue
+
+            int formationTime = array.get(bullBoxTime, i)
+            int confirmTime = array.get(bullBoxConfirmTime, i)
+            int boxHourEnd = array.get(bullBoxHourEnd, i)
+            float boxTop = array.get(bullBoxTop, i)
+            float boxBot = array.get(bullBoxBot, i)
+
+            // PHASE 1: During formation hour - check if hit
+            // Only check bars AFTER the confirmation bar
+            if time <= boxHourEnd and time > confirmTime
+                // Check if price hit the FVG during formation hour
+                bool wasHit = array.get(bullBoxWasHit, i)
+                if not wasHit
+                    // Price must actually ENTER the gap, not just touch boundaries
+                    bool priceEntered = (low < boxTop) and (high > boxBot)
+                    if priceEntered
+                        array.set(bullBoxWasHit, i, true)
+
+            // PHASE 2 & 3: After formation hour - extend if not hit
+            else if time > boxHourEnd
+                // Mark as processed
+                bool processed = array.get(bullBoxProcessed, i)
+                if not processed
+                    array.set(bullBoxProcessed, i, true)
+
+                // Only extend if it was never hit during formation hour
+                bool wasHit = array.get(bullBoxWasHit, i)
+                if not wasHit
+                    // Determine fill condition based on selected mode
+                    bool priceEntered = false
+                    float boxMidpoint = (boxTop + boxBot) / 2.0
+
+                    if gapFillMode == "Touch Box"
+                        // Price enters the gap zone
+                        priceEntered := low <= boxTop and high >= boxBot
+                    else if gapFillMode == "Touch Midpoint"
+                        // Price touches or crosses the midpoint
+                        priceEntered := low <= boxMidpoint
+                    else if gapFillMode == "Fill Completely"
+                        // Price completely fills the gap (reaches bottom)
+                        priceEntered := low <= boxBot
+
+                    // Update lowest price reached if price entered the gap (for Fill Completely visualization)
+                    if gapFillMode == "Fill Completely" and low < boxTop
+                        float currentLowest = array.get(bullBoxLowestPrice, i)
+                        if low < currentLowest
+                            array.set(bullBoxLowestPrice, i, low)
+
+                    if priceEntered
+                        // Mark as filled - stop extending
+                        array.set(bullBoxFilled, i, true)
+                        label currentLabel = array.get(bullBoxLabels, i)
+                        if not na(currentLabel)
+                            label.delete(currentLabel)
+                            array.set(bullBoxLabels, i, na)
+                    else
+                        // Extend box to current bar
+                        box currentBox = array.get(bullBoxes, i)
+                        box.set_right(currentBox, time)
+
+                        // Extend midpoint line if it exists
+                        if showMidpoints and i < array.size(bullMidLines)
+                            line currentLine = array.get(bullMidLines, i)
+                            line.set_x2(currentLine, time)
+
+                        // Create or update label
+                        int hourValue = hour(formationTime, sessionTimezone)
+                        string ampm = hourValue >= 12 ? "pm" : "am"
+                        int hour12 = hourValue > 12 ? hourValue - 12 : (hourValue == 0 ? 12 : hourValue)
+
+                        string labelText = str.format("{0} {1}/{2}",
+                             str.tostring(hour12) + ampm,
+                             str.tostring(month(formationTime, sessionTimezone)),
+                             str.tostring(dayofmonth(formationTime, sessionTimezone)))
+
+                        float labelY = (boxTop + boxBot) / 2.0
+                        label currentLabel = array.get(bullBoxLabels, i)
+
+                        if na(currentLabel)
+                            label newLabel = label.new(time, labelY, labelText,
+                                 xloc=xloc.bar_time, yloc=yloc.price,
+                                 style=label.style_label_left,
+                                 color=color.new(bullColor, 100), textcolor=labelTextColor,
+                                 size=size.small)
+                            array.set(bullBoxLabels, i, newLabel)
+                        else
+                            label.set_xy(currentLabel, time, labelY)
+                            label.set_text(currentLabel, labelText)
+
+                        // Create or update visual overlay for "Fill Completely" mode
+                        if gapFillMode == "Fill Completely"
+                            float lowestPrice = array.get(bullBoxLowestPrice, i)
+
+                            // Only show overlay if price has penetrated the gap
+                            if lowestPrice < boxTop
+                                // Calculate filled portion (from boxTop down to lowestPrice)
+                                // Clamp lowestPrice to not go below boxBot
+                                float overlayBottom = math.max(lowestPrice, boxBot)
+
+                                box overlayBox = array.get(bullBoxOverlays, i)
+                                if na(overlayBox)
+                                    // Create new overlay box
+                                    box newOverlay = box.new(left = formationTime, top = boxTop,
+                                         right = time, bottom = overlayBottom,
+                                         bgcolor = bullFilledColor, border_color = bullFilledColor,
+                                         border_width = 1, xloc = xloc.bar_time)
+                                    array.set(bullBoxOverlays, i, newOverlay)
+                                else
+                                    // Update existing overlay box
+                                    box.set_right(overlayBox, time)
+                                    box.set_bottom(overlayBox, overlayBottom)
+
+    // Process bearish boxes
+    if array.size(bearBoxes) > 0
+        for i = 0 to array.size(bearBoxes) - 1
+            bool isFilled = array.get(bearBoxFilled, i)
+
+            // Skip boxes that are already filled
+            if isFilled
+                continue
+
+            int formationTime = array.get(bearBoxTime, i)
+            int confirmTime = array.get(bearBoxConfirmTime, i)
+            int boxHourEnd = array.get(bearBoxHourEnd, i)
+            float boxTop = array.get(bearBoxTop, i)
+            float boxBot = array.get(bearBoxBot, i)
+
+            // PHASE 1: During formation hour - check if hit
+            // Only check bars AFTER the confirmation bar
+            if time <= boxHourEnd and time > confirmTime
+                // Check if price hit the FVG during formation hour
+                bool wasHit = array.get(bearBoxWasHit, i)
+                if not wasHit
+                    // Price must actually ENTER the gap, not just touch boundaries
+                    bool priceEntered = (low < boxTop) and (high > boxBot)
+                    if priceEntered
+                        array.set(bearBoxWasHit, i, true)
+
+            // PHASE 2 & 3: After formation hour - extend if not hit
+            else if time > boxHourEnd
+                // Mark as processed
+                bool processed = array.get(bearBoxProcessed, i)
+                if not processed
+                    array.set(bearBoxProcessed, i, true)
+
+                // Only extend if it was never hit during formation hour
+                bool wasHit = array.get(bearBoxWasHit, i)
+                if not wasHit
+                    // Determine fill condition based on selected mode
+                    bool priceEntered = false
+                    float boxMidpoint = (boxTop + boxBot) / 2.0
+
+                    if gapFillMode == "Touch Box"
+                        // Price enters the gap zone
+                        priceEntered := low <= boxTop and high >= boxBot
+                    else if gapFillMode == "Touch Midpoint"
+                        // Price touches or crosses the midpoint (moves up from below)
+                        priceEntered := high >= boxMidpoint
+                    else if gapFillMode == "Fill Completely"
+                        // Price completely fills the gap (reaches top)
+                        priceEntered := high >= boxTop
+
+                    // Update highest price reached if price entered the gap (for Fill Completely visualization)
+                    if gapFillMode == "Fill Completely" and high > boxBot
+                        float currentHighest = array.get(bearBoxHighestPrice, i)
+                        if high > currentHighest
+                            array.set(bearBoxHighestPrice, i, high)
+
+                    if priceEntered
+                        // Mark as filled - stop extending
+                        array.set(bearBoxFilled, i, true)
+                        label currentLabel = array.get(bearBoxLabels, i)
+                        if not na(currentLabel)
+                            label.delete(currentLabel)
+                            array.set(bearBoxLabels, i, na)
+                    else
+                        // Extend box to current bar
+                        box currentBox = array.get(bearBoxes, i)
+                        box.set_right(currentBox, time)
+
+                        // Extend midpoint line if it exists
+                        if showMidpoints and i < array.size(bearMidLines)
+                            line currentLine = array.get(bearMidLines, i)
+                            line.set_x2(currentLine, time)
+
+                        // Create or update label
+                        int hourValue = hour(formationTime, sessionTimezone)
+                        string ampm = hourValue >= 12 ? "pm" : "am"
+                        int hour12 = hourValue > 12 ? hourValue - 12 : (hourValue == 0 ? 12 : hourValue)
+
+                        string labelText = str.format("{0} {1}/{2}",
+                             str.tostring(hour12) + ampm,
+                             str.tostring(month(formationTime, sessionTimezone)),
+                             str.tostring(dayofmonth(formationTime, sessionTimezone)))
+
+                        float labelY = (boxTop + boxBot) / 2.0
+                        label currentLabel = array.get(bearBoxLabels, i)
+
+                        if na(currentLabel)
+                            label newLabel = label.new(time, labelY, labelText,
+                                 xloc=xloc.bar_time, yloc=yloc.price,
+                                 style=label.style_label_left,
+                                 color=color.new(bearColor, 100), textcolor=labelTextColor,
+                                 size=size.small)
+                            array.set(bearBoxLabels, i, newLabel)
+                        else
+                            label.set_xy(currentLabel, time, labelY)
+                            label.set_text(currentLabel, labelText)
+
+                        // Create or update visual overlay for "Fill Completely" mode
+                        if gapFillMode == "Fill Completely"
+                            float highestPrice = array.get(bearBoxHighestPrice, i)
+
+                            // Only show overlay if price has penetrated the gap
+                            if highestPrice > boxBot
+                                // Calculate filled portion (from boxBot up to highestPrice)
+                                // Clamp highestPrice to not go above boxTop
+                                float overlayTop = math.min(highestPrice, boxTop)
+
+                                box overlayBox = array.get(bearBoxOverlays, i)
+                                if na(overlayBox)
+                                    // Create new overlay box
+                                    box newOverlay = box.new(left = formationTime, top = overlayTop,
+                                         right = time, bottom = boxBot,
+                                         bgcolor = bearFilledColor, border_color = bearFilledColor,
+                                         border_width = 1, xloc = xloc.bar_time)
+                                    array.set(bearBoxOverlays, i, newOverlay)
+                                else
+                                    // Update existing overlay box
+                                    box.set_right(overlayBox, time)
+                                    box.set_top(overlayBox, overlayTop)

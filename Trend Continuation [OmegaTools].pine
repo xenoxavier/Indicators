@@ -1,0 +1,58 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © OmegaTools
+
+//@version=6
+indicator("Trend Continuation [OmegaTools]", 'Trend')
+
+lnt = input.int(34, 'Trend Length')
+lnt2 = input.int(10, 'Pullback Length')
+
+biasmode = input.string('RVWAP', 'Trend Mode', ['RVWAP', 'Market Structure'])
+
+vwap1 = ta.rma(close * volume, lnt) / ta.rma(volume, lnt)
+vwap2 = ta.rma(close * volume, lnt * 2) / ta.rma(volume, lnt * 2)
+var ms = 0
+var pvh = 0.00
+var pvl = 0.00
+if not na(ta.pivothigh(lnt, lnt))
+    pvh := high[lnt]
+if not na(ta.pivotlow(lnt, lnt))
+    pvl := low[lnt]
+if close > pvh
+    ms := 1
+if close < pvl
+    ms := -1
+
+bias = biasmode == 'RVWAP' ? (vwap1 > vwap2 ? 1 : -1) : biasmode == 'Market Structure' ? ms : 0
+
+hh = ta.highest(high[1], lnt2)
+ll = ta.lowest(low[1], lnt2)
+
+reversal = math.max(bias == 1 ? hh - low : bias == -1 ? high - ll : 0, 0)
+reversalma = ta.sma(reversal, 300)
+reversalhistogram = reversal > reversalma ? (reversal - reversalma) : na
+
+threshold = math.avg(ta.percentile_linear_interpolation(reversal, 500, 90), ta.percentile_linear_interpolation(reversal, 200, 95), ta.sma(reversal, 200) + ta.stdev(reversal, 200) * 2)
+thresplot = threshold - reversalma
+
+plot(reversalhistogram, 'Reversal', bias == 1 and reversalhistogram > thresplot ? #2962ff : bias == -1 and reversalhistogram > thresplot ? #e91e63 : color.gray, 1, plot.style_columns)
+plot(thresplot, 'Threshold', color.gray)
+
+plotthres = bias == 1 ? hh - threshold : bias == -1 ? ll + threshold : na
+plot(ta.change(bias) == 0 ? (plotthres) : na, color = color.new(bias == 1 ? #2962ff : #e91e63, 50), style = plot.style_linebr, force_overlay = true)
+barcolor(close < plotthres and bias == 1 ? #2962ff : close > plotthres and bias == -1 ? #e91e63 : na)
+
+var trades = array.new_int()
+x = 10
+if bias[x] == 1 and reversalhistogram[x] > thresplot[x]
+    trades.push(bias == 1 ? 1 : 0)
+if bias[x] == -1 and reversalhistogram[x] > thresplot[x]
+    trades.push(bias == -1 ? 1 : 0)
+if trades.size() > 500
+    trades.remove(0)
+wr = trades.sum() / trades.size() * 100
+
+var tab = table.new(position.middle_right, 5, 5)
+tab.cell(0, 0, 'WR: ' + str.tostring(wr, '#.#') + '%', text_color = chart.fg_color, tooltip = 'The probability of not changing the trend bias when histogram is colored')
+
+// End of Script

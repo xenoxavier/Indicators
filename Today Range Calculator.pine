@@ -1,0 +1,26 @@
+//@version=5
+indicator("Today", overlay=true)
+
+// === 위치 선택 옵션 ===
+pos = input.string("Top Right", "Table Position", options = ["Top Left", "Top Right", "Bottom Left", "Bottom Right"])
+
+// 위치 변환 함수
+f_pos(p) =>
+    switch p
+        "Top Left" => position.top_left
+        "Top Right" => position.top_right
+        "Bottom Left" => position.bottom_left
+        "Bottom Right" => position.bottom_right
+
+// === HV30 계산 ===
+length  = 30
+returns = math.log(close / close[1])
+variance = ta.variance(returns, length)
+hv30 = math.sqrt(variance * 252) * 100
+
+// === 테이블 생성 ===
+var table t = table.new(f_pos(pos), 1, 1, border_width = 1)
+
+// 마지막 봉에서만 테이블 업데이트 (한 줄짜리 cell)
+if barstate.islast
+    table.cell(t, 0, 0, "Today: " + str.tostring(hv30, "#.##") + "%", text_color = #424242, text_halign = text.align_center, text_valign = text.align_center, bgcolor = #c0c0c0)

@@ -1,0 +1,387 @@
+//@version=6
+indicator("Scaling_mastery Trendlines", overlay = true, max_lines_count = 500)
+
+//----------------------------------------------------
+// INPUTS
+//----------------------------------------------------
+
+// Trendline type
+anchorMode    = input.string("Wicks", "Trendline type",
+                  options = ["Wicks", "Bodies", "Channel"])
+
+// Higher strength = bigger swings = fewer but cleaner lines
+trendStrength = input.string("Strong", "Trend strength",
+                  options = ["Weak", "Medium", "Strong"])
+
+maxSupport    = input.int(10, "Max support lines",    minval = 1, maxval = 100)
+maxResistance = input.int(10, "Max resistance lines", minval = 1, maxval = 100)
+
+showBroken    = input.bool(true,  "Show broken lines")
+extendMode    = input.string("Right", "Extend lines", options = ["None", "Right", "Both"])
+
+extendOpt = extendMode == "Right" ? extend.right : extendMode == "Both" ? extend.both : extend.none
+
+// Basic (wick/body) colors
+supColorActive = input.color(color.new(color.lime, 0),  "Support active")
+supColorBroken = input.color(color.new(color.lime, 70), "Support broken")
+resColorActive = input.color(color.new(color.red, 0),   "Resistance active")
+resColorBroken = input.color(color.new(color.red, 70),  "Resistance broken")
+
+// Channel thickness (B4) and styling
+chanSizeOpt   = input.string("Medium", "Channel thickness",
+                  options = ["Small", "Medium", "Large"])
+chanWickColor = input.color(color.new(color.teal, 0),  "Channel outer lines")
+chanMidColor  = input.color(color.new(color.teal, 60), "Channel middle line")
+chanMidStyleOpt = input.string("Dotted", "Middle line style",
+                     options = ["Dotted", "Dashed", "Solid"])
+
+chanMidStyle =
+     chanMidStyleOpt == "Dotted" ? line.style_dotted :
+     chanMidStyleOpt == "Dashed" ? line.style_dashed :
+                                   line.style_solid
+
+// Channel thickness based on percentage of price — increased for visibility
+float chanPct =
+     chanSizeOpt == "Small"  ? 0.005  :   // 0.5%
+     chanSizeOpt == "Medium" ? 0.010  :   // 1.0%
+                               0.020      // 2.0%
+
+float chanThickness = close * chanPct
+//----------------------------------------------------
+// TREND STRENGTH → PIVOT SIZE
+//----------------------------------------------------
+
+int pivotLen =
+     trendStrength == "Weak"   ? 2 :
+     trendStrength == "Medium" ? 4 :
+                                 6
+
+int leftBars  = pivotLen
+int rightBars = pivotLen
+
+//----------------------------------------------------
+// SOURCES & PIVOTS
+//----------------------------------------------------
+
+float bodyHigh = math.max(open, close)
+float bodyLow  = math.min(open, close)
+
+bool useBodies  = anchorMode == "Bodies"
+bool useChannel = anchorMode == "Channel"
+
+// Basic modes use wicks or bodies, channel always uses wicks
+float hiBasicSrc = useBodies and not useChannel ? bodyHigh : high
+float loBasicSrc = useBodies and not useChannel ? bodyLow  : low
+
+float phBasic = not useChannel ? ta.pivothigh(hiBasicSrc, leftBars, rightBars) : na
+float plBasic = not useChannel ? ta.pivotlow(loBasicSrc, leftBars, rightBars)  : na
+
+int   phBarBasic = not na(phBasic) ? bar_index - rightBars : na
+int   plBarBasic = not na(plBasic) ? bar_index - rightBars : na
+
+// Channel mode pivots (wick-based)
+float phChan = useChannel ? ta.pivothigh(high, leftBars, rightBars) : na
+float plChan = useChannel ? ta.pivotlow(low,  leftBars, rightBars)  : na
+
+int   phBarChan = not na(phChan) ? bar_index - rightBars : na
+int   plBarChan = not na(plChan) ? bar_index - rightBars : na
+
+//----------------------------------------------------
+// STATE ARRAYS
+//----------------------------------------------------
+
+// --- Basic single-line modes ---
+var line[] basicSupLines  = array.new_line()
+var bool[] basicSupBroken = array.new_bool()
+var line[] basicResLines  = array.new_line()
+var bool[] basicResBroken = array.new_bool()
+
+var int   basicLastSupBar   = na
+var float basicLastSupPrice = na
+var int   basicLastResBar   = na
+var float basicLastResPrice = na
+
+// --- Channel mode (2 outer + 1 middle per trend) ---
+var line[] chanSupUpper = array.new_line()
+var line[] chanSupLower = array.new_line()
+var line[] chanSupMid   = array.new_line()
+var bool[] chanSupBroken = array.new_bool()
+
+var line[] chanResUpper = array.new_line()
+var line[] chanResLower = array.new_line()
+var line[] chanResMid   = array.new_line()
+var bool[] chanResBroken = array.new_bool()
+
+var int   chanLastSupBar   = na
+var float chanLastSupPrice = na
+var int   chanLastResBar   = na
+var float chanLastResPrice = na
+
+// Reset when mode changes
+var string lastMode = anchorMode
+if barstate.isnew and anchorMode != lastMode
+    array.clear(basicSupLines)
+    array.clear(basicSupBroken)
+    array.clear(basicResLines)
+    array.clear(basicResBroken)
+    array.clear(chanSupUpper)
+    array.clear(chanSupLower)
+    array.clear(chanSupMid)
+    array.clear(chanSupBroken)
+    array.clear(chanResUpper)
+    array.clear(chanResLower)
+    array.clear(chanResMid)
+    array.clear(chanResBroken)
+    basicLastSupBar   := na
+    basicLastSupPrice := na
+    basicLastResBar   := na
+    basicLastResPrice := na
+    chanLastSupBar    := na
+    chanLastSupPrice  := na
+    chanLastResBar    := na
+    chanLastResPrice  := na
+    lastMode          := anchorMode
+
+//----------------------------------------------------
+// HELPER FOR BASIC LINES
+//----------------------------------------------------
+
+f_add_basic_line(line[] arrL, bool[] arrB, int maxCount,
+                 int x1, float y1, int x2, float y2, color col) =>
+    line ln = line.new(x1, y1, x2, y2,
+                       xloc   = xloc.bar_index,
+                       extend = extendOpt,
+                       color  = col,
+                       width  = 2,
+                       style  = line.style_solid)
+    array.push(arrL, ln)
+    array.push(arrB, false)
+    if array.size(arrL) > maxCount
+        line old = array.shift(arrL)
+        array.shift(arrB)
+        line.delete(old)
+
+//----------------------------------------------------
+// BASIC MODES: WICKS / BODIES
+//----------------------------------------------------
+
+if not useChannel
+    // SUPPORT CREATION
+    if not na(plBarBasic)
+        int idx = rightBars
+        float pivotPrice = useBodies
+             ? math.min(open[idx], close[idx])
+             : low[idx]
+
+        if not na(basicLastSupBar)
+            f_add_basic_line(basicSupLines, basicSupBroken, maxSupport,
+                             basicLastSupBar, basicLastSupPrice,
+                             plBarBasic, pivotPrice, supColorActive)
+
+        basicLastSupBar   := plBarBasic
+        basicLastSupPrice := pivotPrice
+
+    // RESISTANCE CREATION
+    if not na(phBarBasic)
+        int idx = rightBars
+        float pivotPrice = useBodies
+             ? math.max(open[idx], close[idx])
+             : high[idx]
+
+        if not na(basicLastResBar)
+            f_add_basic_line(basicResLines, basicResBroken, maxResistance,
+                             basicLastResBar, basicLastResPrice,
+                             phBarBasic, pivotPrice, resColorActive)
+
+        basicLastResBar   := phBarBasic
+        basicLastResPrice := pivotPrice
+
+    // SUPPORT UPDATE
+    if array.size(basicSupLines) > 0
+        for i = array.size(basicSupLines) - 1 to 0
+            line ln = array.get(basicSupLines, i)
+            bool br = array.get(basicSupBroken, i)
+
+            if not br
+                float lp = line.get_price(ln, bar_index)
+                if not na(lp) and close < lp
+                    br := true
+
+            if br and not showBroken
+                line.delete(ln)
+                array.remove(basicSupLines, i)
+                array.remove(basicSupBroken, i)
+            else
+                array.set(basicSupBroken, i, br)
+                line.set_color(ln, br ? supColorBroken : supColorActive)
+                line.set_style(ln, br ? line.style_dotted : line.style_solid)
+
+    // RESISTANCE UPDATE
+    if array.size(basicResLines) > 0
+        for i = array.size(basicResLines) - 1 to 0
+            line ln = array.get(basicResLines, i)
+            bool br = array.get(basicResBroken, i)
+
+            if not br
+                float lp = line.get_price(ln, bar_index)
+                if not na(lp) and close > lp
+                    br := true
+
+            if br and not showBroken
+                line.delete(ln)
+                array.remove(basicResLines, i)
+                array.remove(basicResBroken, i)
+            else
+                array.set(basicResBroken, i, br)
+                line.set_color(ln, br ? resColorBroken : resColorActive)
+                line.set_style(ln, br ? line.style_dotted : line.style_solid)
+
+//----------------------------------------------------
+// CHANNEL MODE: 2 OUTERS + MIDDLE, THICKNESS B4
+//----------------------------------------------------
+
+if useChannel
+    // SUPPORT CREATION (LOW PIVOTS)
+    if not na(plBarChan)
+        int idx = rightBars
+        float base = low[idx]    // central support line
+
+        if not na(chanLastSupBar)
+            // Old and new central values
+            float y1c = chanLastSupPrice
+            float y2c = base
+
+            // Upper and lower band around central
+            float y1Upper = y1c + chanThickness
+            float y2Upper = y2c + chanThickness
+            float y1Lower = y1c - chanThickness
+            float y2Lower = y2c - chanThickness
+
+            // Middle line between upper & lower
+            float y1Mid = (y1Upper + y1Lower) / 2.0
+            float y2Mid = (y2Upper + y2Lower) / 2.0
+
+            // *** all calls on ONE line each ***
+            line lnU = line.new(chanLastSupBar, y1Upper, plBarChan, y2Upper, xloc = xloc.bar_index, extend = extendOpt, color = chanWickColor, width = 2)
+            line lnL = line.new(chanLastSupBar, y1Lower, plBarChan, y2Lower, xloc = xloc.bar_index, extend = extendOpt, color = chanWickColor, width = 2)
+            line lnM = line.new(chanLastSupBar, y1Mid,   plBarChan, y2Mid,   xloc = xloc.bar_index, extend = extendOpt, color = chanMidColor,  width = 2, style = chanMidStyle)
+
+            array.push(chanSupUpper, lnU)
+            array.push(chanSupLower, lnL)
+            array.push(chanSupMid,   lnM)
+            array.push(chanSupBroken, false)
+
+            if array.size(chanSupUpper) > maxSupport
+                line oldU = array.shift(chanSupUpper)
+                line oldL = array.shift(chanSupLower)
+                line oldM = array.shift(chanSupMid)
+                array.shift(chanSupBroken)
+                line.delete(oldU)
+                line.delete(oldL)
+                line.delete(oldM)
+
+        chanLastSupBar   := plBarChan
+        chanLastSupPrice := base
+
+    // RESISTANCE CREATION (HIGH PIVOTS)
+    if not na(phBarChan)
+        int idx = rightBars
+        float base = high[idx]   // central resistance line
+
+        if not na(chanLastResBar)
+            float y1c = chanLastResPrice
+            float y2c = base
+
+            float y1Upper = y1c + chanThickness
+            float y2Upper = y2c + chanThickness
+            float y1Lower = y1c - chanThickness
+            float y2Lower = y2c - chanThickness
+
+            float y1Mid = (y1Upper + y1Lower) / 2.0
+            float y2Mid = (y2Upper + y2Lower) / 2.0
+
+            line lnU = line.new(chanLastResBar, y1Upper, phBarChan, y2Upper, xloc = xloc.bar_index, extend = extendOpt, color = chanWickColor, width = 2)
+            line lnL = line.new(chanLastResBar, y1Lower, phBarChan, y2Lower, xloc = xloc.bar_index, extend = extendOpt, color = chanWickColor, width = 2)
+            line lnM = line.new(chanLastResBar, y1Mid,   phBarChan, y2Mid,   xloc = xloc.bar_index, extend = extendOpt, color = chanMidColor,  width = 2, style = chanMidStyle)
+
+            array.push(chanResUpper, lnU)
+            array.push(chanResLower, lnL)
+            array.push(chanResMid,   lnM)
+            array.push(chanResBroken, false)
+
+            if array.size(chanResUpper) > maxResistance
+                line oldU = array.shift(chanResUpper)
+                line oldL = array.shift(chanResLower)
+                line oldM = array.shift(chanResMid)
+                array.shift(chanResBroken)
+                line.delete(oldU)
+                line.delete(oldL)
+                line.delete(oldM)
+
+        chanLastResBar   := phBarChan
+        chanLastResPrice := base
+    // SUPPORT UPDATE (channel)
+    if array.size(chanSupUpper) > 0
+        for i = array.size(chanSupUpper) - 1 to 0
+            line lnU = array.get(chanSupUpper, i)
+            line lnL = array.get(chanSupLower, i)
+            line lnM = array.get(chanSupMid,   i)
+            bool br  = array.get(chanSupBroken, i)
+
+            if not br
+                float pU = line.get_price(lnU, bar_index)
+                float pL = line.get_price(lnL, bar_index)
+                if not na(pU) and not na(pL)
+                    float lowerBand = math.min(pU, pL)
+                    if close < lowerBand
+                        br := true
+
+            if br and not showBroken
+                line.delete(lnU)
+                line.delete(lnL)
+                line.delete(lnM)
+                array.remove(chanSupUpper, i)
+                array.remove(chanSupLower, i)
+                array.remove(chanSupMid,   i)
+                array.remove(chanSupBroken, i)
+            else
+                array.set(chanSupBroken, i, br)
+                color colOuter = br ? supColorBroken : chanWickColor
+                color colMid   = br ? supColorBroken : chanMidColor
+                line.set_color(lnU, colOuter)
+                line.set_color(lnL, colOuter)
+                line.set_color(lnM, colMid)
+                line.set_style(lnM, chanMidStyle)
+
+    // RESISTANCE UPDATE (channel)
+    if array.size(chanResUpper) > 0
+        for i = array.size(chanResUpper) - 1 to 0
+            line lnU = array.get(chanResUpper, i)
+            line lnL = array.get(chanResLower, i)
+            line lnM = array.get(chanResMid,   i)
+            bool br  = array.get(chanResBroken, i)
+
+            if not br
+                float pU = line.get_price(lnU, bar_index)
+                float pL = line.get_price(lnL, bar_index)
+                if not na(pU) and not na(pL)
+                    float upperBand = math.max(pU, pL)
+                    if close > upperBand
+                        br := true
+
+            if br and not showBroken
+                line.delete(lnU)
+                line.delete(lnL)
+                line.delete(lnM)
+                array.remove(chanResUpper, i)
+                array.remove(chanResLower, i)
+                array.remove(chanResMid,   i)
+                array.remove(chanResBroken, i)
+            else
+                array.set(chanResBroken, i, br)
+                color colOuter = br ? resColorBroken : chanWickColor
+                color colMid   = br ? resColorBroken : chanMidColor
+                line.set_color(lnU, colOuter)
+                line.set_color(lnL, colOuter)
+                line.set_color(lnM, colMid)
+                line.set_style(lnM, chanMidStyle)

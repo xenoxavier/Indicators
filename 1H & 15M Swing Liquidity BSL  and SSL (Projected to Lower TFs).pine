@@ -1,0 +1,1053 @@
+//@version=5
+indicator("1H & 15M & 2H Swing Liquidity BSL / SSL (Projected to Lower TFs)", overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+//────────────────────── Inputs ──────────────────────
+showBSL             = input.bool(true,  "Show Any BSL")
+showSSL             = input.bool(true,  "Show Any SSL")
+
+show1H_BSL          = input.bool(true,  "Show 1H BSL")
+show1H_SSL          = input.bool(true,  "Show 1H SSL")
+show2H_BSL          = input.bool(true,  "Show 2H BSL")
+show2H_SSL          = input.bool(true,  "Show 2H SSL")
+
+removeMitigated     = input.bool(true,  "Remove Mitigated Lines")
+removeMitigatedLbls = input.bool(true,  "Remove Mitigated Labels")
+
+// Colors
+bslColor            = input.color(color.new(color.lime,   0), "BSL Line Color")
+sslColor            = input.color(color.new(color.maroon, 0), "SSL Line Color")
+
+// Widths (independent per TF + side)
+bslWidth1H          = input.int(2, "1H BSL Line Width",  minval = 1, maxval = 5)
+sslWidth1H          = input.int(2, "1H SSL Line Width",  minval = 1, maxval = 5)
+bslWidth2H          = input.int(2, "2H BSL Line Width",  minval = 1, maxval = 5)
+sslWidth2H          = input.int(2, "2H SSL Line Width",  minval = 1, maxval = 5)
+bslWidth15          = input.int(1, "15M BSL Line Width", minval = 1, maxval = 5)
+sslWidth15          = input.int(1, "15M SSL Line Width", minval = 1, maxval = 5)
+
+bslStyleStr         = input.string("Dotted", "BSL Line Style", options = ["Solid", "Dashed", "Dotted"])
+sslStyleStr         = input.string("Dotted", "SSL Line Style", options = ["Solid", "Dashed", "Dotted"])
+
+labelTextCol        = input.color(color.new(color.white, 0), "Swing Label Text Color")
+labelBgTransp       = input.int(100, "Swing Label Background Transparency", minval = 0, maxval = 100)
+labelSizeInput      = input.string("Normal", "Label Size", options = ["Tiny", "Small", "Normal"])
+bslLabelBgColor     = input.color(color.new(color.black, 0), "BSL Label Box Color")
+sslLabelBgColor     = input.color(color.new(color.black, 0), "SSL Label Box Color")
+rightOffsetBars     = input.int(5, "Price Label Right Offset (bars)", minval = 1)
+
+// Price label box customization
+priceLabelBgColor   = input.color(color.new(color.black, 0), "Price Label Box Color")
+priceLabelBgTransp  = input.int(0, "Price Label Box Transparency", minval = 0, maxval = 100)
+
+// Max visible lines
+maxBSLLines         = input.int(100, "Max BSL Lines", minval = 1, maxval = 500)
+maxSSLLines         = input.int(100, "Max SSL Lines", minval = 1, maxval = 500)
+
+//────────────────────── Helpers ──────────────────────
+f_line_style(str) =>
+    s = line.style_solid
+    if str == "Dashed"
+        s := line.style_dashed
+    else if str == "Dotted"
+        s := line.style_dotted
+    s
+
+labelSize = switch labelSizeInput
+    "Tiny"  => size.tiny
+    "Small" => size.small
+    =>        size.normal
+
+labelOffset = 0.0
+priceEps    = syminfo.mintick * 0.5
+
+//────────────────────── TF control ──────────────────────
+curTfSec = timeframe.in_seconds(timeframe.period)
+sec15    = timeframe.in_seconds("15")
+sec60    = timeframe.in_seconds("60")
+sec120   = timeframe.in_seconds("120")
+
+use15m           = curTfSec <= sec15
+isLowerTfThan15m = curTfSec < sec15
+
+use1H            = curTfSec <= sec60
+isLowerTfThan1H  = curTfSec < sec60
+
+use2H            = curTfSec <= sec120
+isLowerTfThan2H  = curTfSec < sec120
+
+//────────────────────── Storage ──────────────────────
+var line[]  bslLines       = array.new_line()
+var line[]  sslLines       = array.new_line()
+var label[] bslLabels      = array.new_label()
+var label[] sslLabels      = array.new_label()
+var label[] bslPriceLabels = array.new_label()
+var label[] sslPriceLabels = array.new_label()
+
+// 1H run state
+var int downRunLen1H = 0
+var int downMarks1H  = 0
+var int upRunLen1H   = 0
+var int upMarks1H    = 0
+
+// 2H run state
+var int downRunLen2H = 0
+var int downMarks2H  = 0
+var int upRunLen2H   = 0
+var int upMarks2H    = 0
+
+// 15m run state
+var int downRunLen15 = 0
+var int downMarks15  = 0
+var int upRunLen15   = 0
+var int upMarks15    = 0
+
+//────────────────────── 1H series via security ──────────────────────
+open1H   = request.security(syminfo.tickerid, "60", open,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+high1H   = request.security(syminfo.tickerid, "60", high,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+low1H    = request.security(syminfo.tickerid, "60", low,   lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+close1H  = request.security(syminfo.tickerid, "60", close, lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+time1H   = request.security(syminfo.tickerid, "60", time,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+
+isDown1H = close1H < open1H
+isUp1H   = close1H > open1H
+isNew1H  = ta.change(time1H) != 0   // new CLOSED 1H bar
+
+//────────────────────── 2H series via security ──────────────────────
+open2H   = request.security(syminfo.tickerid, "120", open,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+high2H   = request.security(syminfo.tickerid, "120", high,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+low2H    = request.security(syminfo.tickerid, "120", low,   lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+close2H  = request.security(syminfo.tickerid, "120", close, lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+time2H   = request.security(syminfo.tickerid, "120", time,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+
+isDown2H = close2H < open2H
+isUp2H   = close2H > open2H
+isNew2H  = ta.change(time2H) != 0   // new CLOSED 2H bar
+
+//────────────────────── 15m series via security ──────────────────────
+open15   = request.security(syminfo.tickerid, "15", open,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+high15   = request.security(syminfo.tickerid, "15", high,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+low15    = request.security(syminfo.tickerid, "15", low,   lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+close15  = request.security(syminfo.tickerid, "15", close, lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+time15   = request.security(syminfo.tickerid, "15", time,  lookahead = barmerge.lookahead_off, gaps = barmerge.gaps_off)
+
+isDown15 = close15 < open15
+isUp15   = close15 > open15
+isNew15  = ta.change(time15) != 0   // new CLOSED 15m bar
+
+bslStyle = f_line_style(bslStyleStr)
+sslStyle = f_line_style(sslStyleStr)
+
+//────────────────────── HTF overlap helpers ──────────────────────
+f_has_htf_bsl_at_price(price) =>
+    has = false
+    n = array.size(bslLines)
+    if n > 0
+        for i = 0 to n - 1
+            ln  = array.get(bslLines, i)
+            y   = line.get_y1(ln)
+            lbl = array.get(bslLabels, i)
+            txt = label.get_text(lbl)
+            if (txt == "BSL 1H" or txt == "BSL 2H") and math.abs(y - price) <= priceEps
+                has := true
+                break
+    has
+
+f_has_htf_ssl_at_price(price) =>
+    has = false
+    n = array.size(sslLines)
+    if n > 0
+        for i = 0 to n - 1
+            ln  = array.get(sslLines, i)
+            y   = line.get_y1(ln)
+            lbl = array.get(sslLabels, i)
+            txt = label.get_text(lbl)
+            if (txt == "SSL 1H" or txt == "SSL 2H") and math.abs(y - price) <= priceEps
+                has := true
+                break
+    has
+
+f_remove_15m_bsl_at_price(price) =>
+    n = array.size(bslLines)
+    if n > 0
+        for i = 0 to n - 1
+            idx = n - 1 - i
+            ln  = array.get(bslLines, idx)
+            y   = line.get_y1(ln)
+            lbl = array.get(bslLabels, idx)
+            txt = label.get_text(lbl)
+            if txt == "BSL 15M" and math.abs(y - price) <= priceEps
+                line.delete(ln)
+                label.delete(lbl)
+                pLbl = array.get(bslPriceLabels, idx)
+                label.delete(pLbl)
+                array.remove(bslLines, idx)
+                array.remove(bslLabels, idx)
+                array.remove(bslPriceLabels, idx)
+
+f_remove_15m_ssl_at_price(price) =>
+    n = array.size(sslLines)
+    if n > 0
+        for i = 0 to n - 1
+            idx = n - 1 - i
+            ln  = array.get(sslLines, idx)
+            y   = line.get_y1(ln)
+            lbl = array.get(sslLabels, idx)
+            txt = label.get_text(lbl)
+            if txt == "SSL 15M" and math.abs(y - price) <= priceEps
+                line.delete(ln)
+                label.delete(lbl)
+                pLbl = array.get(sslPriceLabels, idx)
+                label.delete(pLbl)
+                array.remove(sslLines, idx)
+                array.remove(sslLabels, idx)
+                array.remove(sslPriceLabels, idx)
+
+//────────────────────── 1H BSL / SSL (after 2 closed candles) ──────────────────────
+if use1H and isNew1H and barstate.isconfirmed
+    if isDown1H
+        if isDown1H[1]
+            downRunLen1H += 1
+        else
+            downRunLen1H := 1
+            downMarks1H  := 0
+    else
+        downRunLen1H := 0
+        downMarks1H  := 0
+
+    if isUp1H
+        if isUp1H[1]
+            upRunLen1H += 1
+        else
+            upRunLen1H := 1
+            upMarks1H  := 0
+    else
+        upRunLen1H := 0
+        upMarks1H  := 0
+
+    // 1H BSL
+    if showBSL and show1H_BSL and downRunLen1H == 2 and downMarks1H == 0
+        firstHigh1H  = high1H[1]
+        secondHigh1H = high1H
+
+        f_remove_15m_bsl_at_price(firstHigh1H)
+        f_remove_15m_bsl_at_price(secondHigh1H)
+
+        swingHigh1H  = math.max(firstHigh1H, secondHigh1H)
+
+        if isLowerTfThan1H
+            lSwing = line.new(
+                 x1 = bar_index,
+                 y1 = swingHigh1H,
+                 x2 = bar_index + 1,
+                 y2 = swingHigh1H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = bslColor,
+                 width = bslWidth1H,
+                 style = bslStyle)
+            array.push(bslLines, lSwing)
+
+            lblSwing = label.new(
+                 x = bar_index,
+                 y = swingHigh1H,
+                 text = "BSL 1H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(bslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(bslLabels, lblSwing)
+
+            pLblSwing = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = swingHigh1H,
+                 text = str.tostring(swingHigh1H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(bslPriceLabels, pLblSwing)
+        else
+            l1 = line.new(
+                 x1 = bar_index,
+                 y1 = firstHigh1H,
+                 x2 = bar_index + 1,
+                 y2 = firstHigh1H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = bslColor,
+                 width = bslWidth1H,
+                 style = bslStyle)
+            array.push(bslLines, l1)
+
+            lbl1 = label.new(
+                 x = bar_index,
+                 y = firstHigh1H,
+                 text = "BSL 1H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(bslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(bslLabels, lbl1)
+
+            pLbl1 = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = firstHigh1H,
+                 text = str.tostring(firstHigh1H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(bslPriceLabels, pLbl1)
+
+            l2 = line.new(
+                 x1 = bar_index,
+                 y1 = secondHigh1H,
+                 x2 = bar_index + 1,
+                 y2 = secondHigh1H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = bslColor,
+                 width = bslWidth1H,
+                 style = bslStyle)
+            array.push(bslLines, l2)
+
+            lbl2 = label.new(
+                 x = bar_index,
+                 y = secondHigh1H,
+                 text = "BSL 1H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(bslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(bslLabels, lbl2)
+
+            pLbl2 = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = secondHigh1H,
+                 text = str.tostring(secondHigh1H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(bslPriceLabels, pLbl2)
+
+        downMarks1H := 2
+
+    // 1H SSL
+    if showSSL and show1H_SSL and upRunLen1H == 2 and upMarks1H == 0
+        firstLow1H   = low1H[1]
+        secondLow1H  = low1H
+
+        f_remove_15m_ssl_at_price(firstLow1H)
+        f_remove_15m_ssl_at_price(secondLow1H)
+
+        swingLow1H  = math.min(firstLow1H, secondLow1H)
+
+        if isLowerTfThan1H
+            lSwingS = line.new(
+                 x1 = bar_index,
+                 y1 = swingLow1H,
+                 x2 = bar_index + 1,
+                 y2 = swingLow1H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = sslColor,
+                 width = sslWidth1H,
+                 style = sslStyle)
+            array.push(sslLines, lSwingS)
+
+            lblSwingS = label.new(
+                 x = bar_index,
+                 y = swingLow1H,
+                 text = "SSL 1H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(sslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(sslLabels, lblSwingS)
+
+            pLblSwingS = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = swingLow1H,
+                 text = str.tostring(swingLow1H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(sslPriceLabels, pLblSwingS)
+        else
+            l1s = line.new(
+                 x1 = bar_index,
+                 y1 = firstLow1H,
+                 x2 = bar_index + 1,
+                 y2 = firstLow1H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = sslColor,
+                 width = sslWidth1H,
+                 style = sslStyle)
+            array.push(sslLines, l1s)
+
+            lbl1s = label.new(
+                 x = bar_index,
+                 y = firstLow1H,
+                 text = "SSL 1H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(sslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(sslLabels, lbl1s)
+
+            pLbl1s = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = firstLow1H,
+                 text = str.tostring(firstLow1H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(sslPriceLabels, pLbl1s)
+
+            l2s = line.new(
+                 x1 = bar_index,
+                 y1 = secondLow1H,
+                 x2 = bar_index + 1,
+                 y2 = secondLow1H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = sslColor,
+                 width = sslWidth1H,
+                 style = sslStyle)
+            array.push(sslLines, l2s)
+
+            lbl2s = label.new(
+                 x = bar_index,
+                 y = secondLow1H,
+                 text = "SSL 1H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(sslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(sslLabels, lbl2s)
+
+            pLbl2s = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = secondLow1H,
+                 text = str.tostring(secondLow1H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(sslPriceLabels, pLbl2s)
+
+        upMarks1H := 2
+
+//────────────────────── 2H BSL / SSL (after 2 closed candles) ──────────────────────
+if use2H and isNew2H and barstate.isconfirmed
+    if isDown2H
+        if isDown2H[1]
+            downRunLen2H += 1
+        else
+            downRunLen2H := 1
+            downMarks2H  := 0
+    else
+        downRunLen2H := 0
+        downMarks2H  := 0
+
+    if isUp2H
+        if isUp2H[1]
+            upRunLen2H += 1
+        else
+            upRunLen2H := 1
+            upMarks2H  := 0
+    else
+        upRunLen2H := 0
+        upMarks2H  := 0
+
+    // 2H BSL
+    if showBSL and show2H_BSL and downRunLen2H == 2 and downMarks2H == 0
+        firstHigh2H  = high2H[1]
+        secondHigh2H = high2H
+
+        f_remove_15m_bsl_at_price(firstHigh2H)
+        f_remove_15m_bsl_at_price(secondHigh2H)
+
+        swingHigh2H  = math.max(firstHigh2H, secondHigh2H)
+
+        if isLowerTfThan2H
+            lSwing2 = line.new(
+                 x1 = bar_index,
+                 y1 = swingHigh2H,
+                 x2 = bar_index + 1,
+                 y2 = swingHigh2H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = bslColor,
+                 width = bslWidth2H,
+                 style = bslStyle)
+            array.push(bslLines, lSwing2)
+
+            lblSwing2 = label.new(
+                 x = bar_index,
+                 y = swingHigh2H,
+                 text = "BSL 2H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(bslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(bslLabels, lblSwing2)
+
+            pLblSwing2 = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = swingHigh2H,
+                 text = str.tostring(swingHigh2H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(bslPriceLabels, pLblSwing2)
+        else
+            l21 = line.new(
+                 x1 = bar_index,
+                 y1 = firstHigh2H,
+                 x2 = bar_index + 1,
+                 y2 = firstHigh2H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = bslColor,
+                 width = bslWidth2H,
+                 style = bslStyle)
+            array.push(bslLines, l21)
+
+            lbl21 = label.new(
+                 x = bar_index,
+                 y = firstHigh2H,
+                 text = "BSL 2H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(bslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(bslLabels, lbl21)
+
+            pLbl21 = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = firstHigh2H,
+                 text = str.tostring(firstHigh2H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(bslPriceLabels, pLbl21)
+
+            l22 = line.new(
+                 x1 = bar_index,
+                 y1 = secondHigh2H,
+                 x2 = bar_index + 1,
+                 y2 = secondHigh2H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = bslColor,
+                 width = bslWidth2H,
+                 style = bslStyle)
+            array.push(bslLines, l22)
+
+            lbl22 = label.new(
+                 x = bar_index,
+                 y = secondHigh2H,
+                 text = "BSL 2H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(bslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(bslLabels, lbl22)
+
+            pLbl22 = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = secondHigh2H,
+                 text = str.tostring(secondHigh2H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(bslPriceLabels, pLbl22)
+
+        downMarks2H := 2
+
+    // 2H SSL
+    if showSSL and show2H_SSL and upRunLen2H == 2 and upMarks2H == 0
+        firstLow2H   = low2H[1]
+        secondLow2H  = low2H
+
+        f_remove_15m_ssl_at_price(firstLow2H)
+        f_remove_15m_ssl_at_price(secondLow2H)
+
+        swingLow2H  = math.min(firstLow2H, secondLow2H)
+
+        if isLowerTfThan2H
+            lSwing2S = line.new(
+                 x1 = bar_index,
+                 y1 = swingLow2H,
+                 x2 = bar_index + 1,
+                 y2 = swingLow2H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = sslColor,
+                 width = sslWidth2H,
+                 style = sslStyle)
+            array.push(sslLines, lSwing2S)
+
+            lblSwing2S = label.new(
+                 x = bar_index,
+                 y = swingLow2H,
+                 text = "SSL 2H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(sslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(sslLabels, lblSwing2S)
+
+            pLblSwing2S = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = swingLow2H,
+                 text = str.tostring(swingLow2H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(sslPriceLabels, pLblSwing2S)
+        else
+            l21s = line.new(
+                 x1 = bar_index,
+                 y1 = firstLow2H,
+                 x2 = bar_index + 1,
+                 y2 = firstLow2H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = sslColor,
+                 width = sslWidth2H,
+                 style = sslStyle)
+            array.push(sslLines, l21s)
+
+            lbl21s = label.new(
+                 x = bar_index,
+                 y = firstLow2H,
+                 text = "SSL 2H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(sslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(sslLabels, lbl21s)
+
+            pLbl21s = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = firstLow2H,
+                 text = str.tostring(firstLow2H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(sslPriceLabels, pLbl21s)
+
+            l22s = line.new(
+                 x1 = bar_index,
+                 y1 = secondLow2H,
+                 x2 = bar_index + 1,
+                 y2 = secondLow2H,
+                 xloc = xloc.bar_index,
+                 extend = extend.right,
+                 color = sslColor,
+                 width = sslWidth2H,
+                 style = sslStyle)
+            array.push(sslLines, l22s)
+
+            lbl22s = label.new(
+                 x = bar_index,
+                 y = secondLow2H,
+                 text = "SSL 2H",
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_left,
+                 textcolor = labelTextCol,
+                 color = color.new(sslLabelBgColor, labelBgTransp),
+                 size = labelSize)
+            array.push(sslLabels, lbl22s)
+
+            pLbl22s = label.new(
+                 x = last_bar_index + rightOffsetBars,
+                 y = secondLow2H,
+                 text = str.tostring(secondLow2H, format.mintick),
+                 xloc = xloc.bar_index,
+                 yloc = yloc.price,
+                 style = label.style_label_right,
+                 textcolor = labelTextCol,
+                 color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                 size = labelSize)
+            array.push(sslPriceLabels, pLbl22s)
+
+        upMarks2H := 2
+
+//────────────────────── 15M BSL / SSL (after 2 closed candles) ──────────────────────
+if use15m and isNew15 and barstate.isconfirmed
+    if isDown15
+        if isDown15[1]
+            downRunLen15 += 1
+        else
+            downRunLen15 := 1
+            downMarks15  := 0
+    else
+        downRunLen15 := 0
+        downMarks15  := 0
+
+    if isUp15
+        if isUp15[1]
+            upRunLen15 += 1
+        else
+            upRunLen15 := 1
+            upMarks15  := 0
+    else
+        upRunLen15 := 0
+        upMarks15  := 0
+
+    // 15m BSL
+    if showBSL and downRunLen15 == 2 and downMarks15 == 0
+        firstHigh15  = high15[1]
+        secondHigh15 = high15
+
+        swingHigh15  = math.max(firstHigh15, secondHigh15)
+
+        if isLowerTfThan15m
+            if not f_has_htf_bsl_at_price(swingHigh15)
+                lSwing15 = line.new(
+                     x1 = bar_index,
+                     y1 = swingHigh15,
+                     x2 = bar_index + 1,
+                     y2 = swingHigh15,
+                     xloc = xloc.bar_index,
+                     extend = extend.right,
+                     color = bslColor,
+                     width = bslWidth15,
+                     style = bslStyle)
+                array.push(bslLines, lSwing15)
+
+                lblSwing15 = label.new(
+                     x = bar_index,
+                     y = swingHigh15,
+                     text = "BSL 15M",
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_left,
+                     textcolor = labelTextCol,
+                     color = color.new(bslLabelBgColor, labelBgTransp),
+                     size = labelSize)
+                array.push(bslLabels, lblSwing15)
+
+                pLblSwing15 = label.new(
+                     x = last_bar_index + rightOffsetBars,
+                     y = swingHigh15,
+                     text = str.tostring(swingHigh15, format.mintick),
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_right,
+                     textcolor = labelTextCol,
+                     color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                     size = labelSize)
+                array.push(bslPriceLabels, pLblSwing15)
+        else
+            if not f_has_htf_bsl_at_price(firstHigh15)
+                l15_1 = line.new(
+                     x1 = bar_index,
+                     y1 = firstHigh15,
+                     x2 = bar_index + 1,
+                     y2 = firstHigh15,
+                     xloc = xloc.bar_index,
+                     extend = extend.right,
+                     color = bslColor,
+                     width = bslWidth15,
+                     style = bslStyle)
+                array.push(bslLines, l15_1)
+
+                lbl15_1 = label.new(
+                     x = bar_index,
+                     y = firstHigh15,
+                     text = "BSL 15M",
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_left,
+                     textcolor = labelTextCol,
+                     color = color.new(bslLabelBgColor, labelBgTransp),
+                     size = labelSize)
+                array.push(bslLabels, lbl15_1)
+
+                pLbl15_1 = label.new(
+                     x = last_bar_index + rightOffsetBars,
+                     y = firstHigh15,
+                     text = str.tostring(firstHigh15, format.mintick),
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_right,
+                     textcolor = labelTextCol,
+                     color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                     size = labelSize)
+                array.push(bslPriceLabels, pLbl15_1)
+
+            if not f_has_htf_bsl_at_price(secondHigh15)
+                l15_2 = line.new(
+                     x1 = bar_index,
+                     y1 = secondHigh15,
+                     x2 = bar_index + 1,
+                     y2 = secondHigh15,
+                     xloc = xloc.bar_index,
+                     extend = extend.right,
+                     color = bslColor,
+                     width = bslWidth15,
+                     style = bslStyle)
+                array.push(bslLines, l15_2)
+
+                lbl15_2 = label.new(
+                     x = bar_index,
+                     y = secondHigh15,
+                     text = "BSL 15M",
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_left,
+                     textcolor = labelTextCol,
+                     color = color.new(bslLabelBgColor, labelBgTransp),
+                     size = labelSize)
+                array.push(bslLabels, lbl15_2)
+
+                pLbl15_2 = label.new(
+                     x = last_bar_index + rightOffsetBars,
+                     y = secondHigh15,
+                     text = str.tostring(secondHigh15, format.mintick),
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_right,
+                     textcolor = labelTextCol,
+                     color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                     size = labelSize)
+                array.push(bslPriceLabels, pLbl15_2)
+
+        downMarks15 := 2
+
+    // 15m SSL
+    if showSSL and upRunLen15 == 2 and upMarks15 == 0
+        firstLow15   = low15[1]
+        secondLow15  = low15
+
+        swingLow15  = math.min(firstLow15, secondLow15)
+
+        if isLowerTfThan15m
+            if not f_has_htf_ssl_at_price(swingLow15)
+                lSwing15s = line.new(
+                     x1 = bar_index,
+                     y1 = swingLow15,
+                     x2 = bar_index + 1,
+                     y2 = swingLow15,
+                     xloc = xloc.bar_index,
+                     extend = extend.right,
+                     color = sslColor,
+                     width = sslWidth15,
+                     style = sslStyle)
+                array.push(sslLines, lSwing15s)
+
+                lblSwing15s = label.new(
+                     x = bar_index,
+                     y = swingLow15,
+                     text = "SSL 15M",
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_left,
+                     textcolor = labelTextCol,
+                     color = color.new(sslLabelBgColor, labelBgTransp),
+                     size = labelSize)
+                array.push(sslLabels, lblSwing15s)
+
+                pLblSwing15s = label.new(
+                     x = last_bar_index + rightOffsetBars,
+                     y = swingLow15,
+                     text = str.tostring(swingLow15, format.mintick),
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_right,
+                     textcolor = labelTextCol,
+                     color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                     size = labelSize)
+                array.push(sslPriceLabels, pLblSwing15s)
+        else
+            if not f_has_htf_ssl_at_price(firstLow15)
+                l15s_1 = line.new(
+                     x1 = bar_index,
+                     y1 = firstLow15,
+                     x2 = bar_index + 1,
+                     y2 = firstLow15,
+                     xloc = xloc.bar_index,
+                     extend = extend.right,
+                     color = sslColor,
+                     width = sslWidth15,
+                     style = sslStyle)
+                array.push(sslLines, l15s_1)
+
+                lbl15s_1 = label.new(
+                     x = bar_index,
+                     y = firstLow15,
+                     text = "SSL 15M",
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_left,
+                     textcolor = labelTextCol,
+                     color = color.new(sslLabelBgColor, labelBgTransp),
+                     size = labelSize)
+                array.push(sslLabels, lbl15s_1)
+
+                pLbl15s_1 = label.new(
+                     x = last_bar_index + rightOffsetBars,
+                     y = firstLow15,
+                     text = str.tostring(firstLow15, format.mintick),
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_right,
+                     textcolor = labelTextCol,
+                     color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                     size = labelSize)
+                array.push(sslPriceLabels, pLbl15s_1)
+
+            if not f_has_htf_ssl_at_price(secondLow15)
+                l15s_2 = line.new(
+                     x1 = bar_index,
+                     y1 = secondLow15,
+                     x2 = bar_index + 1,
+                     y2 = secondLow15,
+                     xloc = xloc.bar_index,
+                     extend = extend.right,
+                     color = sslColor,
+                     width = sslWidth15,
+                     style = sslStyle)
+                array.push(sslLines, l15s_2)
+
+                lbl15s_2 = label.new(
+                     x = bar_index,
+                     y = secondLow15,
+                     text = "SSL 15M",
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_left,
+                     textcolor = labelTextCol,
+                     color = color.new(sslLabelBgColor, labelBgTransp),
+                     size = labelSize)
+                array.push(sslLabels, lbl15s_2)
+
+                pLbl15s_2 = label.new(
+                     x = last_bar_index + rightOffsetBars,
+                     y = secondLow15,
+                     text = str.tostring(secondLow15, format.mintick),
+                     xloc = xloc.bar_index,
+                     yloc = yloc.price,
+                     style = label.style_label_right,
+                     textcolor = labelTextCol,
+                     color = color.new(priceLabelBgColor, priceLabelBgTransp),
+                     size = labelSize)
+                array.push(sslPriceLabels, pLbl15s_2)
+
+        upMarks15 := 2
+
+//────────────────────── Mitigation + label updates + trimming ─────────────
+f_check_group(lines, labels, priceLabels, useHigh, doRemove, doRemoveLabels) =>
+    count = array.size(lines)
+    if count > 0
+        for i = 0 to count - 1
+            idx = count - 1 - i
+            ln  = array.get(lines, idx)
+            y   = line.get_y1(ln)
+            cond = useHigh ? (high >= y) : (low <= y)
+            if cond and doRemove
+                line.delete(ln)
+                array.remove(lines, idx)
+                lbl = array.get(labels, idx)
+                if doRemoveLabels
+                    label.delete(lbl)
+                array.remove(labels, idx)
+                pLbl = array.get(priceLabels, idx)
+                label.delete(pLbl)
+                array.remove(priceLabels, idx)
+
+f_update_price_labels(lines, priceLabels) =>
+    count = array.size(lines)
+    if count > 0
+        for i = 0 to count - 1
+            ln  = array.get(lines, i)
+            lbl = array.get(priceLabels, i)
+            y   = line.get_y1(ln)
+            label.set_x(lbl, last_bar_index + rightOffsetBars)
+            label.set_y(lbl, y)
+            label.set_text(lbl, str.tostring(y, format.mintick))
+
+f_trim_lines(lines, labels, priceLabels, maxCount) =>
+    count = array.size(lines)
+    if count > maxCount
+        excess = count - maxCount
+        for i = 0 to excess - 1
+            lnOld   = array.get(lines, 0)
+            lblOld  = array.get(labels, 0)
+            pLblOld = array.get(priceLabels, 0)
+            line.delete(lnOld)
+            label.delete(lblOld)
+            label.delete(pLblOld)
+            array.remove(lines, 0)
+            array.remove(labels, 0)
+            array.remove(priceLabels, 0)
+
+// Remove mitigated & keep labels in sync
+f_check_group(bslLines, bslLabels, bslPriceLabels, true,  removeMitigated, removeMitigatedLbls)
+f_check_group(sslLines, sslLabels, sslPriceLabels, false, removeMitigated, removeMitigatedLbls)
+
+// Update price labels to right edge
+f_update_price_labels(bslLines, bslPriceLabels)
+f_update_price_labels(sslLines, sslPriceLabels)
+
+// Enforce max line counts
+f_trim_lines(bslLines, bslLabels, bslPriceLabels, maxBSLLines)
+f_trim_lines(sslLines, sslLabels, sslPriceLabels, maxSSLLines)

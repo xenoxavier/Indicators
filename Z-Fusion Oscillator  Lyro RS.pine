@@ -1,0 +1,266 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © LyroRS
+
+//@version=6
+indicator("Z-Fusion Oscillator | Lyro RS", overlay = false)
+
+// Imports
+import LyroRS/LMAs/1 as DynamicMAs
+
+
+// Groups
+var divCross_g = "𝗗𝗜𝗩𝗘𝗥𝗚𝗘𝗡𝗖𝗘 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦 𝗭 𝗖𝗥𝗢𝗦𝗦"
+var divAVG_g   = "𝗗𝗜𝗩𝗘𝗥𝗚𝗘𝗡𝗖𝗘 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦 𝗔𝗩𝗚"
+var indi_g     = "𝗜𝗡𝗗𝗜𝗖𝗔𝗧𝗢𝗥 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var rsi_g      = "𝗥𝗦𝗜 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var macd_g     = "𝗠𝗔𝗖𝗗 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var stoch_g    = "𝗦𝗧𝗢𝗖𝗛 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var mom_g      = "𝗠𝗢𝗠𝗘𝗡𝗧𝗨𝗠 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var roc_g      = "𝗥𝗔𝗧𝗘 𝗢𝗙 𝗖𝗛𝗔𝗡𝗚𝗘 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var colors_g   = "𝗖𝗢𝗟𝗢𝗥 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var plot_g     = "𝗣𝗟𝗢𝗧 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+var signal_g   = "𝗦𝗜𝗚𝗡𝗔𝗟 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦"
+
+// Input Settings > MAIN
+src = input.source(close, title = "Source", group = indi_g)
+zscoreLength = input.int(65, title = "Zscore Length", group = indi_g)
+avgLine1 = input.int(3, title = "Zscore MA Length", group = indi_g)
+up2 = input.float(1, title = "Overbought Line 2", group = indi_g, minval= 0)
+up1 = input.float(0.5, title = "Overbought Line 1", group = indi_g, minval= 0)
+lo1 = input.float(-0.5, title = "Oversold Line 1", group = indi_g, maxval= 0)
+lo2 = input.float(-1, title = "Oversold Line 2", group = indi_g, maxval= 0)
+
+
+// RSI Settings
+rsiLength = input.int(20, title = "Length", group = rsi_g)
+rsiEMA = input.int(7, title = "EMA Length", group = rsi_g)
+
+// MACD Settings
+macdFastLength = input.int(26, title = "Fast Length", group = macd_g)
+macdSlowLength = input.int(12, title = "Slow Length", group = macd_g)
+macdSigLength = input.int(14, title = "Signal Line", group = macd_g)
+
+// STOCH Settings
+stochLength = input.int(30, title = "Length", group = stoch_g)
+stochEMALength = input.int(10, title = "EMA Length", group = stoch_g)
+stochDLength = input.int(10, title = "%D length", group = stoch_g)
+
+// MOMENTUM Settings
+momLength = input.int(20, title = "Length", group = mom_g)
+momEMALength = input.int(10, title = "EMA Length", group = mom_g)
+
+// RATE OF CHANGE Settings
+rocLength = input.int(30, title = "Length", group = roc_g)
+rocEMALength = input.int(10, title = "EMA Length", group = roc_g)
+
+// Divergence Enable / Disable
+calculateDivergenceCross = input.bool(true, title="Calculate Divergence Z Cross", group = divCross_g, display = display.data_window, tooltip = "Calculating divergences is needed in order for divergence alerts to fire.")
+
+// Color Inputs
+ColMode = input.string("Mystic", "Custom Color Palette", inline="drop", options=["Classic", "Mystic", "Accented", "Royal"], display=display.none, group=colors_g,  tooltip="Select a color theme for indicator display.")
+
+cpyn = input.bool(true,  "Use Custom Palette", tooltip="Enable to manually choose colors for bullish and bearish signals.", group=colors_g, display=display.none)
+cp_UpC = input.color(#00ff00, "Custom Up", inline="Custom Palette", tooltip="Pick a custom color for bullish signals.", group=colors_g, display=display.none)
+cp_DnC = input.color(#ff0000, "Custom Down", inline="Custom Palette", tooltip="Pick a custom color for bearish signals.", group=colors_g, display=display.none)
+
+// Standard devation Function
+Stdev(float src, int period) =>
+    actualPeriod = math.min(period, bar_index + 1) 
+    mean         = DynamicMAs.SMA(src, actualPeriod)
+    sumSquares   = 0.0
+    count = 0
+    for i = 0 to actualPeriod - 1
+        if not na(src[i])
+            sumSquares := sumSquares + math.pow(nz(src[i]) - mean, 2)
+            count := count + 1
+    if count > 0
+        math.sqrt(sumSquares / count)
+    else
+        na
+
+// Zscore Function
+ZScore(float src, int lookback) =>
+    ret_ = (src - DynamicMAs.SMA(src, lookback)) / Stdev(src, lookback)
+    ret_
+
+
+
+// Colors
+color UpC = na
+color DnC = na
+
+switch ColMode
+    "Classic" =>
+        UpC := #00E676
+        DnC := #880E4F
+    "Mystic" =>
+        UpC := #30FDCF
+        DnC := #E117B7
+    "Accented" =>
+        UpC := #9618F7
+        DnC := #FF0078
+    "Royal" =>
+        UpC := #FFC107
+        DnC := #673AB7
+
+
+if cpyn
+    UpC := cp_UpC
+    DnC := cp_DnC
+
+
+
+// RSI Final Calculation
+re = DynamicMAs.EMA(ta.rsi(src, rsiLength), rsiEMA) // RSI EMA
+
+// MACD Final Calculation
+[macdline, sigline, histLine] = ta.macd(src, macdFastLength, macdSlowLength, macdSigLength)
+
+
+
+// STOCH Final Calculation
+stoch = DynamicMAs.EMA(ta.stoch(src, high, low, stochLength), stochEMALength)
+d = ta.sma(stoch, stochDLength)
+
+// MOMENTUM Final Calculation
+mom = DynamicMAs.EMA(ta.mom(src, momLength), momEMALength)
+
+
+// RATE OF CHANGE Final Calculation
+roc = DynamicMAs.EMA(ta.roc(src, rocLength), rocEMALength)
+
+
+// Add Zscore function to indicators
+re_z = ZScore(re,zscoreLength)
+histLine_z = ZScore(histLine,zscoreLength)
+stoch_z = ZScore(stoch, zscoreLength)
+mom_z = ZScore(mom,zscoreLength)
+roc_z = ZScore(roc,zscoreLength)
+
+// Average of Zscore's
+avg = math.avg(re_z, histLine_z, stoch_z, mom_z, roc_z)
+
+// Final
+savg = DynamicMAs.EMA(avg, avgLine1)
+savg2 = DynamicMAs.EMA(avg, avgLine1*2)
+
+
+// Color
+var avgCol = color.white
+if savg > savg2
+    avgCol := UpC
+if savg < savg2
+    avgCol := DnC
+
+// Plot Zscore
+m = plot(savg2, color = avgCol)
+m1 = plot(savg, color = avgCol)
+fill(m, m1, color = avgCol)
+
+
+// hlines
+hline(0, linestyle = hline.style_solid)
+
+h = hline(up1)
+h1 = hline(up2)
+fill(h, h1, color = color.new(DnC, 75))
+
+
+l = hline(lo1)
+l1 = hline(lo2)
+fill(l, l1, color = color.new(UpC, 75))
+
+bgcolor(color.new(savg > up2 ? DnC : savg < lo2 ? UpC : na, 75))
+
+c = savg > up2 and (savg < savg2 and savg[1] > savg2[1]) ? DnC : savg < lo2 and (savg > savg2 and savg[1] < savg2[1]) ? UpC : na
+
+plotshape(savg, "X Marks", shape.xcross, location.absolute, color= c, display = display.pane, size= size.small)
+
+// Divergence
+lookbackRightcross = input.int(5, title = "Lookback Right", group = divCross_g)
+lookbackLeftcross = input.int(5, title = "Lookback Left", group = divCross_g)
+rangeUppercross = input.int(60, title = "Range Upper", group = divCross_g)
+rangeLowercross = input.int(5, title = "Range Lower", group = divCross_g)
+bearColorcross = DnC
+bullColorcross = UpC
+textColorcross = color.white
+noneColorcross = color.new(color.white, 100)
+
+_inRangecross(bool condcross) =>
+    barscross = ta.barssince(condcross)
+    rangeLowercross <= barscross and barscross <= rangeUppercross
+
+plFoundcross = false
+phFoundcross = false
+
+bullCondcross = false
+bearCondcross = false
+
+rsiLBRcross = savg[lookbackRightcross]
+
+if calculateDivergenceCross
+    //------------------------------------------------------------------------------
+    // Regular Bullish
+    // rsi: Higher Low
+    plFoundcross := not na(ta.pivotlow(savg, lookbackLeftcross, lookbackRightcross))    
+    rsiHLcross = rsiLBRcross > ta.valuewhen(plFoundcross, rsiLBRcross, 1) and _inRangecross(plFoundcross[1])
+    // Price: Lower Low
+    lowLBRcross = low[lookbackRightcross]
+    priceLLcross = lowLBRcross < ta.valuewhen(plFoundcross, lowLBRcross, 1)
+    bullCondcross := priceLLcross and rsiHLcross and plFoundcross
+
+    //------------------------------------------------------------------------------
+    // Regular Bearish
+    // rsi: Lower High
+    phFoundcross := not na(ta.pivothigh(savg, lookbackLeftcross, lookbackRightcross))
+    rsiLHcross = rsiLBRcross < ta.valuewhen(phFoundcross, rsiLBRcross, 1) and _inRangecross(phFoundcross[1])
+    // Price: Higher High
+    highLBRcross = high[lookbackRightcross]
+    priceHHcross = highLBRcross > ta.valuewhen(phFoundcross, highLBRcross, 1)
+    bearCondcross := priceHHcross and rsiLHcross and phFoundcross
+
+
+// Divergence 
+
+plot(
+     plFoundcross   ? rsiLBRcross : na,
+     offset    = -lookbackRightcross,
+     title     = "Regular Bullish",
+     linewidth = 2,
+     color     = (bullCondcross ? bullColorcross : noneColorcross),
+     display   = display.pane,
+     editable  = calculateDivergenceCross)
+
+plotshape(
+     bullCondcross  ? rsiLBRcross : na,
+     offset    = -lookbackRightcross,
+     title     = "Regular Bullish Label",
+     text      = "𝓑𝓤𝓛𝓛",
+     style     = shape.labelup,
+     location  = location.absolute,
+     color     = bullColorcross,
+     textcolor = #000000,
+     display   = display.pane,
+     editable  = calculateDivergenceCross)
+
+plot(
+     phFoundcross   ? rsiLBRcross : na,
+     offset    = -lookbackRightcross,
+     title     = "Regular Bearish",
+     linewidth = 2,
+     color     = (bearCondcross ? bearColorcross : noneColorcross),
+     display   = display.pane,
+     editable  = calculateDivergenceCross)
+
+plotshape(
+     bearCondcross  ? rsiLBRcross : na,
+     offset    = -lookbackRightcross,
+     title     = "Regular Bearish Label",
+     text      = "𝓑𝓔𝓐𝓡",
+     style     = shape.labeldown,
+     location  = location.absolute,
+     color     = bearColorcross,
+     textcolor = textColorcross,
+     display   = display.pane,
+     editable  = calculateDivergenceCross)
+

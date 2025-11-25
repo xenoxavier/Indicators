@@ -1,0 +1,74 @@
+//@version=5
+strategy("EMA Trend Pro v5.0 — 策略版（1:1出30%+保本+吃大行情）", overlay=true, 
+         default_qty_type=strategy.percent_of_equity, default_qty_value=100, 
+         pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.075)
+
+// ========= 參數 =========
+adxMin     = input.int(20, "ADX 門檻")
+atrMultSL  = input.float(1.8, "初始止損 ATR 倍數", step=0.1)
+extendBars = input.int(18, "長條柱延伸K棒數", minval=10, maxval=60)
+
+// ========= 指標 =========
+ema7   = ta.ema(close, 7)
+ema14  = ta.ema(close, 14)
+ema21  = ta.ema(close, 21)
+ema144 = ta.ema(close, 144)
+atr20  = ta.atr(20)
+[diPlus, diMinus, adx14] = ta.dmi(14, 14)
+volOK  = volume > ta.sma(volume, 20) * 1.1
+
+longCond  = (ta.crossover(ema14,ema144) or ta.crossover(ema7,ema144)) and ema7>ema14 and ema14>ema21 and adx14>adxMin and diPlus>diMinus and volOK
+shortCond = (ta.crossunder(ema14,ema144) or ta.crossunder(ema7,ema144)) and ema7<ema14 and ema14<ema21 and adx14>adxMin and diMinus>diPlus and volOK
+
+plot(ema7,   color=#FF0000)
+plot(ema14,  color=#FF9800)
+plot(ema21,  color=#FFC107)
+plot(ema144, color=#2962FF, linewidth=2)
+
+plotshape(longCond,  location=location.belowbar, color=color.rgb(0, 230, 119, 67), style=shape.triangleup,   size=size.large, text="BUY",  textcolor=color.white)
+plotshape(shortCond, location=location.abovebar, color=#ff174523, style=shape.triangledown, size=size.large, text="SELL", textcolor=color.white)
+
+// ========= 進場 =========
+if longCond and strategy.position_size == 0
+    strategy.entry("多單", strategy.long)
+
+if shortCond and strategy.position_size == 0
+    strategy.entry("空單", strategy.short)
+
+// ========= 持倉時執行 =========
+if strategy.position_size != 0
+    float entry = strategy.position_avg_price
+    float sl    = strategy.position_size > 0 ? entry - atr20 * atrMultSL : entry + atr20 * atrMultSL
+    float r     = math.abs(entry - sl)
+    float tp1   = entry + (strategy.position_size > 0 ? r : -r)
+    float tp2   = entry + (strategy.position_size > 0 ? 2*r : -2*r)
+    float tp3   = entry + (strategy.position_size > 0 ? 3*r : -3*r)
+    color mainCol = strategy.position_size > 0 ? #00E676 : #FF1744
+
+    // 三段出場 + 止損
+    strategy.exit("TP1", from_entry="多單", limit=tp1, qty_percent=30, comment="1:1出30%")
+    strategy.exit("TP1", from_entry="空單", limit=tp1, qty_percent=30, comment="1:1出30%")
+    strategy.exit("TP2", from_entry="多單", limit=tp2, qty_percent=50, comment="1:2")
+    strategy.exit("TP2", from_entry="空單", limit=tp2, qty_percent=50, comment="1:2")
+    strategy.exit("TP3", from_entry="多單", limit=tp3, qty_percent=100, comment="1:3")
+    strategy.exit("TP3", from_entry="空單", limit=tp3, qty_percent=100, comment="1:3")
+    strategy.exit("SL",  from_entry="多單", stop=sl)
+    strategy.exit("SL",  from_entry="空單", stop=sl)
+
+    // 1:1 一觸及立刻保本
+    if (strategy.position_size > 0 and high >= tp1) or (strategy.position_size < 0 and low <= tp1)
+        strategy.exit("保本", from_entry="多單", stop=entry)
+        strategy.exit("保本", from_entry="空單", stop=entry)
+
+    // 只在最後一根K棒畫長條柱與標籤（畫面超乾淨）
+    if barstate.islast
+        box.new(bar_index-1, math.max(entry,tp3,sl), bar_index+extendBars, math.min(entry,tp3,sl), bgcolor=color.new(mainCol,75), border_color=mainCol, border_width=2, extend=extend.right)
+        label.new(bar_index+8, entry, "進場 "+str.tostring(entry,"#.##"), style=label.style_label_left, color=mainCol, textcolor=color.white, size=size.normal)
+        label.new(bar_index+8, sl,    "止損 "+str.tostring(sl,"#.##"),    style=label.style_label_left  , color=#FF1744, textcolor=color.white, size=size.normal)
+        label.new(bar_index+8, tp1,   "TP1 1:1", style=label.style_label_left, color=#00E676, textcolor=color.white, size=size.normal)
+        label.new(bar_index+8, tp2,   "TP2 1:2", style=label.style_label_left, color=#00E676, textcolor=color.white, size=size.normal)
+        label.new(bar_index+8, tp3,   "TP3 1:3", style=label.style_label_left, color=#00E676, textcolor=color.white, size=size.normal)
+
+// ========= 警報 =========
+alertcondition(longCond,  "多單進場", "EMA 多單訊號！")
+alertcondition(shortCond, "空單進場", "EMA 空單訊號！")

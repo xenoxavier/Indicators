@@ -1,0 +1,74 @@
+//@version=5
+indicator("EMA Trend Pro v5.0 — 長條柱＋進場價格標籤（終極完美版）", overlay=true, max_boxes_count=50, max_labels_count=200)
+
+// ========= 參數 =========
+adxMin     = input.int(20, "ADX 門檻")
+atrMultSL  = input.float(1.8, "止損 ATR 倍數", step=0.1)
+maxSignals = input.int(10, "保留最新訊號數量", minval=1, maxval=20)
+extendBars = input.int(15, "長條柱向右延伸K棒數", minval=5, maxval=40)
+
+// ========= 指標 =========
+ema7   = ta.ema(close, 7)
+ema14  = ta.ema(close, 14)
+ema21  = ta.ema(close, 21)
+ema144 = ta.ema(close, 144)
+atr20  = ta.atr(20)
+[diPlus, diMinus, adx14] = ta.dmi(14, 14)
+volOK  = volume > ta.sma(volume, 20) * 1.1
+
+longCond  = (ta.crossover(ema14,ema144) or ta.crossover(ema7,ema144)) and ema7>ema14 and ema14>ema21 and adx14>adxMin and diPlus>diMinus and volOK
+shortCond = (ta.crossunder(ema14,ema144) or ta.crossunder(ema7,ema144)) and ema7<ema14 and ema14<ema21 and adx14>adxMin and diMinus>diPlus and volOK
+
+plot(ema7, color=#FF0000)
+plot(ema14, color=#FF9800)
+plot(ema21, color=#FFC107)
+plot(ema144, color=#2962FF, linewidth=2)
+
+plotshape(longCond,  location=location.belowbar, color=#00E676, style=shape.triangleup,   size=size.small, text="BUY",  textcolor=color.white)
+plotshape(shortCond, location=location.abovebar, color=#FF1744, style=shape.triangledown, size=size.small, text="SELL", textcolor=color.white)
+
+// ========= 陣列 =========
+var box[]   boxes  = array.new_box()
+var label[] labels = array.new_label()
+
+// ========= 新訊號 =========
+if longCond or shortCond
+    float entry = close
+    float sl    = na
+    float tp1   = na
+    float tp2   = na
+    float tp3   = na
+    color col   = longCond ? color.new(#00E676, 75) : color.new(#FF1744, 75)
+    color txtCol = longCond ? color.white : color.white
+
+    if longCond
+        sl  := entry - atr20 * atrMultSL
+        tp1 := entry + (entry - sl)
+        tp2 := entry + 2*(entry - sl)
+        tp3 := entry + 3*(entry - sl)
+    if shortCond
+        sl  := entry + atr20 * atrMultSL
+        tp1 := entry - (sl - entry)
+        tp2 := entry - 2*(sl - entry)
+        tp3 := entry - 3*(sl - entry)
+
+    // 實心長條柱（短版）
+    box b = box.new(bar_index-1, math.max(entry, tp3, sl), bar_index + extendBars, math.min(entry, tp3, sl), bgcolor=col, border_color=longCond ? color.rgb(0, 230, 119, 73) : #ff174534, border_width=2, extend=extend.right)
+    array.push(boxes, b)
+
+    // 進場價格標籤（最上方，醒目）
+    label entryLab = label.new(bar_index+6, entry, "進場 " + str.tostring(entry, "#.##"), style=label.style_label_left, color=longCond ? #006be6 : color.rgb(255, 116, 23), textcolor=color.white, size=size.normal)
+    
+    // 止損與止盈標籤
+    label.new(bar_index+6, sl,  " 止損  " + str.tostring(sl,  "#.##"), style=label.style_label_left, color=#FF1744, textcolor=color.white, size=size.normal)
+    label.new(bar_index+6, tp1, " 止盈一 " + str.tostring(tp1, "#.##"), style=label.style_label_left, color=longCond?#00E676:#FF5252, textcolor=color.white, size=size.normal)
+    label.new(bar_index+6, tp2, " 止盈二 " + str.tostring(tp2, "#.##"), style=label.style_label_left, color=longCond?#00E676:#FF5252, textcolor=color.white, size=size.normal)
+    label.new(bar_index+6, tp3, " 止盈三 " + str.tostring(tp3, "#.##"), style=label.style_label_left, color=longCond?#00E676:#FF5252, textcolor=color.white, size=size.normal)
+
+    // 保留最新 maxSignals 筆（刪除最舊的 box）
+    if array.size(boxes) > maxSignals
+        box.delete(array.shift(boxes))
+
+// ========= 警報 =========
+alertcondition(longCond,  "多單警報", "EMA 多單訊號！")
+alertcondition(shortCond, "空單警報", "EMA 空單訊號！")

@@ -1,0 +1,27 @@
+//@version=6
+indicator("Reversal Bar", overlay=true)
+
+// ------ 輸入設定：Reversal Patterns Group ------
+group_rev = "Reversal Patterns"
+use_reversals = input.bool(true, "Use Reversal Bars", group=group_rev)
+bear_rev_color = input.color(color.rgb(255, 0, 0), "Bear Rev ▲", group=group_rev)
+bull_rev_color = input.color(color.rgb(0, 202, 7), "Bull Rev ▼", group=group_rev)
+
+// ------ 變量計算：Bar 屬性 ------
+range_val = high - low
+close_pos_pct = range_val > 0 ? (close - low) / range_val * 100 : 50
+upper_tail = high - math.max(open, close)
+lower_tail = math.min(open, close) - low
+upper_tail_pct = range_val > 0 ? upper_tail / range_val * 100 : 0
+lower_tail_pct = range_val > 0 ? lower_tail / range_val * 100 : 0
+overlap_with_prior = math.max(0, math.min(high, high[1]) - math.max(low, low[1]))
+prior_range_val = high[1] - low[1]
+is_in_range = prior_range_val > 0 and overlap_with_prior / prior_range_val > 0.5
+
+// ------ 邏輯處理：Reversal Bars ------
+bool potential_bull = use_reversals and close > open and close_pos_pct > 50 and upper_tail_pct <= 30 and lower_tail_pct >= 30 and low < low[1] and not is_in_range
+bool potential_bear = use_reversals and close < open and close_pos_pct < 50 and lower_tail_pct <= 30 and upper_tail_pct >= 30 and high > high[1] and not is_in_range
+
+// ------ 輸出繪製 ------
+plotshape(potential_bull, style=shape.triangleup, location=location.belowbar, color=bull_rev_color, size=size.small, title="Bull Rev")
+plotshape(potential_bear, style=shape.triangledown, location=location.abovebar, color=bear_rev_color, size=size.small, title="Bear Rev")

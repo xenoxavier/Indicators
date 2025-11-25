@@ -1,0 +1,13 @@
+//@version=6 
+indicator("Silent 60pt Volatility Trigger", overlay=true)
+// Define the required High-to-Low range in points
+required_points = input.float(60.0, title="Required H-L Points")
+
+// Calculate the High-to-Low range for the current candle
+hl_range = high - low
+
+// Define the simple alert condition: range is greater than or equal to the required points
+alert_condition = hl_range >= required_points
+
+// This line makes the condition selectable in the Alert Manager
+alertcondition(alert_condition, title='60pt Range Hit', message='60pt Range Hit on current timeframe.')

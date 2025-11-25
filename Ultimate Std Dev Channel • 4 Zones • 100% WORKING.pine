@@ -1,0 +1,199 @@
+//@version=5
+
+indicator("Ultimate Std Dev Channel • FINAL •  (Fixed)", overlay=true)
+
+
+
+// INPUTS
+
+length  = input.int(128, "Length", minval=1)
+
+src     = input.source(close, "Source")
+
+
+
+show1   = input.bool(true,  "Show ±1σ")
+
+m1      = input.float(1.0, "1σ Multiplier", step=0.1)
+
+show2   = input.bool(true,  "Show ±2σ")
+
+m2      = input.float(2.0, "2σ Multiplier", step=0.1)
+
+
+
+midColor = input.color(color.black, "Middle Line Color")
+
+midWidth = input.int(2, "Middle Line Width", minval=1, maxval=5)
+
+
+
+upLine1 = input.color(color.blue,   "Upper +1σ Line")
+
+upLine2 = input.color(color.green,  "Upper +2σ Line")
+
+dnLine1 = input.color(color.orange, "Lower -1σ Line")
+
+dnLine2 = input.color(color.red,    "Lower -2σ Line")
+
+
+
+fillU1  = input.color(color.new(#2196F3, 88), "Upper Fill 1 (±1σ)")
+
+fillU2  = input.color(color.new(#4CAF50, 90), "Upper Fill 2 (±2σ)")
+
+fillD1  = input.color(color.new(#FF9800, 88), "Lower Fill 1 (±1σ)")
+
+fillD2  = input.color(color.new(#F44336, 90), "Lower Fill 2 (±2σ)")
+
+
+
+extendR = input.bool(true,  "Extend Right")
+
+extendL = input.bool(false, "Extend Left")
+
+ex = extendL and extendR ? extend.both : extendL ? extend.left : extendR ? extend.right : extend.none
+
+
+
+// REGRESSION
+
+var float slope = na
+
+var float intercept = na
+
+
+
+if barstate.islast
+
+    float sumX  = 0.0
+
+    float sumY  = 0.0
+
+    float sumXY = 0.0
+
+    float sumX2 = 0.0
+
+    for i = 0 to length - 1
+
+        float x = i + 1.0
+
+        float y = src[i]
+
+        sumX  += x
+
+        sumY  += y
+
+        sumXY += x * y
+
+        sumX2 += x * x
+
+    slope     := (length * sumXY - sumX * sumY) / (length * sumX2 - sumX * sumX)
+
+    intercept := (sumY - slope * sumX) / length + slope
+
+
+
+startY = intercept + slope * (length - 1)
+
+endY   = intercept
+
+
+
+// STD DEV
+
+stdDev(m) =>
+
+    float total = 0.0
+
+    for i = 0 to length - 1
+
+        total += math.pow(src[i] - (intercept + slope * i), 2)
+
+    math.sqrt(total / length) * m
+
+
+
+// MIDDLE LINE
+
+var line mid = line.new(bar_index - length + 1, startY, bar_index, endY, color=midColor, width=midWidth, extend=ex)
+
+line.set_xy1(mid, bar_index - length + 1, startY)
+
+line.set_xy2(mid, bar_index, endY)
+
+
+
+// UPPER
+
+// The initialization of lastUp and lastDn MUST happen AFTER mid is updated.
+
+var line lastUp = mid
+
+var line lastDn = mid
+
+
+
+if show1
+
+    dev = stdDev(m1)
+
+    // Create +1σ line
+
+    l   = line.new(bar_index - length + 1, startY + dev, bar_index, endY + dev, color=upLine1, style=line.style_dashed, extend=ex)
+
+    // *** FIX IS HERE: Create fill U1 (mid to +1σ) ***
+
+    linefill.new(mid, l, fillU1) // Use 'mid' explicitly as the lower boundary
+
+    // Set lastUp to +1σ line for the next band
+
+    lastUp := l
+
+if show2
+
+    dev = stdDev(m2)
+
+    // Create +2σ line
+
+    l   = line.new(bar_index - length + 1, startY + dev, bar_index, endY + dev, color=upLine2, style=line.style_dashed, extend=ex)
+
+    // Create fill U2 (+1σ to +2σ)
+
+    // Note: lastUp here holds the reference to the +1σ line
+
+    linefill.new(lastUp, l, fillU2)
+
+
+
+// LOWER
+
+if show1
+
+    dev = stdDev(m1)
+
+    // Create -1σ line
+
+    l   = line.new(bar_index - length + 1, startY - dev, bar_index, endY - dev, color=dnLine1, style=line.style_dashed, extend=ex)
+
+    // *** FIX IS HERE: Create fill D1 (-1σ to mid) ***
+
+    linefill.new(l, mid, fillD1) // Use 'mid' explicitly as the upper boundary
+
+    // Set lastDn to -1σ line for the next band
+
+    lastDn := l
+
+if show2
+
+    dev = stdDev(m2)
+
+    // Create -2σ line
+
+    l   = line.new(bar_index - length + 1, startY - dev, bar_index, endY - dev, color=dnLine2, style=line.style_dashed, extend=ex)
+
+    // Create fill D2 (-2σ to -1σ)
+
+    // Note: lastDn here holds the reference to the -1σ line
+
+    linefill.new(l, lastDn, fillD2)

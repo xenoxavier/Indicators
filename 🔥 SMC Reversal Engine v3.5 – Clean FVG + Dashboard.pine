@@ -1,0 +1,573 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © renderingnature1
+
+//@version=6
+indicator("🔥 SMC Reversal Engine v3.5 – Clean FVG + Dashboard", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+
+// ──────────────────────────────────────
+// === INPUTS (HYBRID) ===
+// ──────────────────────────────────────
+htf = input.timeframe("60", "HTF for Structure")
+
+// Fractal Sensitivity
+useAutoFractal = input.bool(true, "Auto Fractal Sensitivity?", group="Fractal Settings")
+manualFractalSensitivity = input.int(3, "Manual Sensitivity (when Auto OFF)", minval=1, group="Fractal Settings")
+
+fractalSensitivity = useAutoFractal ? (
+     htf == "1"   ? 1 : htf == "5"   ? 2 : htf == "15"  ? 3 : htf == "30"  ? 4 :
+     htf == "60"  ? 5 : htf == "120" ? 6 : htf == "240" ? 7 : htf == "D"   ? 8 :
+     htf == "W"   ? 10 : htf == "M"   ? 12 : 3) : manualFractalSensitivity
+
+// Visuals
+showStructureLines = input.bool(true, "Show HTF High/Low Lines")
+dashboardPosition = input.string("Top Right", "Dashboard Position", options=["Top Left","Top Right","Bottom Left","Bottom Right"])
+minimalMode = input.bool(false, "Minimal Mode (hide table & most labels)")
+
+// Label offsets
+chochLabelOffset = input.int(6, "CHoCH Label Offset", options=[2,4,6,8,12])
+bosLabelOffset   = input.int(4, "BOS Label Offset", options=[2,4,6,8,12])
+hlLabelOffset    = input.int(2, "HL/LL Label Offset", options=[2,4,6,8,12])
+
+// FVG Settings
+showFVG          = input.bool(true, "Show FVG Zones")
+showFVGFill      = input.bool(true, "Show FVG Fill")
+markTapEntry     = input.bool(true, "Mark Entry When FVG Is Tapped")
+highlightTarget  = input.bool(true, "Show FVG‑Based Target Line")
+useTrendFilter   = input.bool(true, "Only Show FVGs in Trend Direction")
+maxFVGs          = input.int(3, "Max FVG Zones per direction", minval=1)
+fvgExtend        = input.string("right", "FVG Extend", options=["right","none"]) == "right" ? extend.right : extend.none
+fvgMaxLife       = input.int(50, "Delete FVG after N bars", minval=10)
+
+// Buy/Sell + EMA
+enableBuySell    = input.bool(true, "Enable Buy/Sell Signals")
+emaConfirm       = input.bool(true, "Require EMA Crossover Confirmation")
+useAutoEMA       = input.bool(true, "Auto EMA lengths?")
+manualFastEMA    = input.int(9, "Manual Fast EMA", minval=1)
+manualSlowEMA    = input.int(21, "Manual Slow EMA", minval=1)
+
+fastLen = useAutoEMA ? (htf=="1"?5:htf=="5"?9:htf=="15"?12:htf=="30"?14:htf=="60"?21:htf=="120"?34:htf=="240"?55:htf=="D"?89:144) : manualFastEMA
+
+slowLen = useAutoEMA ? (htf=="1"?13:htf=="5"?21:htf=="15"?34:htf=="30"?50:htf=="60"?89:htf=="120"?144:htf=="240"?200:300) : manualSlowEMA
+
+// Educational
+showSwingTags   = input.bool(true, "Show HH/HL/LH/LL tags", group="Educational")
+showCheatSheet  = input.bool(true, "Show SMC Cheat-Sheet", group="Educational")
+
+// Early Top Warning
+showEarlyTop    = input.bool(true, "Show Early Top Warnings")
+wickThresh      = input.float(0.5, "Wick Size Threshold (%)", step=0.1)
+rsiLen          = input.int(14, "RSI Length")
+rsiDivThresh    = input.float(0.0, "RSI Divergence Threshold", step=0.1)
+
+// Structure Narratives & Accuracy
+showNarrativeLabels       = input.bool(true, "Show Chart Narratives")
+useAutoNarrativeLabels    = input.bool(true, "Auto Max Narrative Labels?")
+manualMaxNarrativeLabels  = input.int(5, "Manual Max Narrative Labels", minval=1)
+
+autoMaxNarrLabels = htf == "1" ? 12 : htf == "5" ? 10 : htf == "15" ? 8 : htf == "30" ? 6 : htf == "60" ? 5 : htf == "120" ? 4 : htf == "D" ? 3 : htf == "W" ? 2 : 5
+maxNarrativeLabels = useAutoNarrativeLabels ? autoMaxNarrLabels : manualMaxNarrativeLabels
+
+showPredictionAccuracy = input.bool(true, "Show Prediction Accuracy Rate")
+showOnlyRecentLabels   = input.bool(true, "Show Only Most Recent HH/HL/LL/LH Labels")
+
+// ──────────────────────────────────────
+// === HELPER FUNCTIONS ===
+// ──────────────────────────────────────
+// Fractal Detection
+isFractalHigh = ta.pivothigh(high, fractalSensitivity, fractalSensitivity)
+isFractalLow  = ta.pivotlow(low, fractalSensitivity, fractalSensitivity)
+
+// Confidence Rating for prediction accuracy
+getConfidenceLabel(p) =>
+    p >= 90 ? "Very High ✅" :p >= 75 ? "High 🟢" :p >= 60 ? "Moderate 🟡" :p >= 40 ? "Low 🔴" : "Very Low ❌"
+
+// Simple dotted line + label (used in CHoCH/BOS lite)
+drawLabel(_offset, _y, _txt, _col) =>
+    line.new(bar_index, _y, bar_index + _offset, _y, color=_col, style=line.style_dotted)
+    label.new(bar_index + _offset, _y, _txt, style=label.style_label_left, color=color.new(_col, 0), textcolor=color.white, size=size.small)
+
+// Date formatter (used in CHoCH/BOS timestamp labels)
+getFormattedDate(t) =>
+    year = year(t)
+    month = month(t)
+    day = dayofmonth(t)
+    hour = hour(t)
+    minute = minute(t)
+    str.tostring(year) + "-" + str.tostring(month, "00") + "-" + str.tostring(day, "00") + " " + str.tostring(hour, "00") + ":" + str.tostring(minute, "00")
+
+// ──────────────────────────────────────
+// === VARIABLE INIT & HTF STRUCTURE ===
+// ──────────────────────────────────────
+
+// RSI and structure memory
+var float lastSwingHighEH = na
+var float lastSwingHighRSI = na
+rsi = ta.rsi(close, rsiLen)
+
+// HTF High/Low using fractal-based detection
+htfPivotHigh = request.security(syminfo.tickerid, htf, ta.pivothigh(high, fractalSensitivity, fractalSensitivity))
+htfPivotLow  = request.security(syminfo.tickerid, htf, ta.pivotlow(low, fractalSensitivity, fractalSensitivity))
+
+htfHigh = not na(htfPivotHigh) ? htfPivotHigh : na
+htfLow  = not na(htfPivotLow)  ? htfPivotLow  : na
+
+
+var float lastHigh = na
+var float lastLow  = na
+var string lastHighType = ""
+var string lastLowType  = ""
+
+// Update HTF high/low memory
+if not na(htfHigh)
+    lastHigh := htfHigh
+    lastHighType := str.tostring(htfHigh, "#.##")
+
+if not na(htfLow)
+    lastLow := htfLow
+    lastLowType := str.tostring(htfLow, "#.##")
+
+// Optional: plot HTF levels
+plot(showStructureLines ? lastHigh : na, title="HTF High", color=color.red)
+plot(showStructureLines ? lastLow  : na, title="HTF Low",  color=color.green)
+
+// ──────────────────────────────────────
+// === STRUCTURE LOGIC (CHoCH & BOS) ===
+// ──────────────────────────────────────
+
+// Raw CHoCH/BOS logic (fractal-based using safe pivots)
+pivotHigh = ta.pivothigh(high, fractalSensitivity, fractalSensitivity)
+pivotLow  = ta.pivotlow(low, fractalSensitivity, fractalSensitivity)
+
+// Raw CHoCH/BOS logic (fractal-based using safe pivots)
+bullishCHoCH_raw = not na(pivotHigh) and pivotHigh > lastHigh
+bearishCHoCH_raw = not na(pivotLow)  and pivotLow  < lastLow
+
+bullishBOS = not na(pivotLow) and pivotLow > lastLow
+bearishBOS = not na(pivotHigh) and pivotHigh < lastHigh
+
+// Track structural sequence state
+var string trendDir = "Neutral"
+trendDir := bullishBOS or bullishCHoCH_raw ? "Bullish" : bearishBOS or bearishCHoCH_raw ? "Bearish" : trendDir
+
+// Confirmed CHoCH signals only if trend was opposite
+bullishCHoCH = trendDir != "Bullish" and bullishCHoCH_raw
+bearishCHoCH = trendDir != "Bearish" and bearishCHoCH_raw
+
+// Sequence tracking
+var int hhSeq = 0, hlSeq = 0, lhSeq = 0, llSeq = 0
+var string nextExpect = "—"
+var float lastSwingHigh = na
+var float lastSwingLow  = na
+
+// For tracking accuracy of HL, HH, etc.
+var int predictionCount = 0
+var int correctPredictionCount = 0
+var float predictionRate = na
+var bool expectingHL = false
+var bool expectingLH = false
+var bool expectingHH = false
+var bool expectingLL = false
+
+// Cleanup old prediction label if exists
+var label predLbl = na
+if not na(predLbl)
+    label.delete(predLbl)
+
+// Determine what's expected next
+trendDir := bullishCHoCH or bullishBOS ? "Bullish" : bearishCHoCH or bearishBOS ? "Bearish" : trendDir
+
+nextExpect := bullishCHoCH ? "Expect HL" :
+              bearishCHoCH ? "Expect LH" :
+              bullishBOS   ? "Expect HH" :
+              bearishBOS   ? "Expect LL" :
+              trendDir == "Bullish" ? "Look for HL" :
+              trendDir == "Bearish" ? "Look for LH" :
+              "⏳ Waiting for Structure"
+
+// Prepare prediction logic
+if bullishCHoCH
+    expectingHL := true
+    predictionCount += 1
+if bearishCHoCH
+    expectingLH := true
+    predictionCount += 1
+if bullishBOS
+    expectingHH := true
+    predictionCount += 1
+if bearishBOS
+    expectingLL := true
+    predictionCount += 1
+
+// ──────────────────────────────────────
+// === PREDICTION CONFIRMATIONS & RATE ===
+// ──────────────────────────────────────
+if expectingHL and not na(pivotLow) and low > lastLow
+    correctPredictionCount += 1
+    expectingHL := false
+    predLbl := label.new(bar_index + 1, low, "✅ HL Confirmed", style=label.style_label_left, color=na, textcolor=color.green, size=size.normal)
+
+if expectingLH and not na(pivotHigh) and high < lastHigh
+    correctPredictionCount += 1
+    expectingLH := false
+    predLbl := label.new(bar_index + 1, high, "✅ LH Confirmed", style=label.style_label_left, color=na, textcolor=color.maroon, size=size.normal)
+
+if expectingHH and not na(pivotHigh) and high > lastHigh
+    correctPredictionCount += 1
+    expectingHH := false
+    predLbl := label.new(bar_index + 1, high, "✅ HH Confirmed", style=label.style_label_left, color=na, textcolor=color.lime, size=size.normal)
+
+if expectingLL and not na(pivotLow) and low < lastLow
+    correctPredictionCount += 1
+    expectingLL := false
+    predLbl := label.new(bar_index + 1, low, "✅ LL Confirmed", style=label.style_label_left, color=na, textcolor=color.red, size=size.normal)
+
+// Calculate prediction rate
+predictionRate := predictionCount > 0 ? (correctPredictionCount / predictionCount) * 100 : na
+
+// Structure narrative label (anticipation)
+anticipate = bullishCHoCH ? "CHoCH Bullish → HL expected" :
+             bearishCHoCH ? "CHoCH Bearish → LH expected" :
+             bullishBOS ? "BOS Bullish → HH expected" :
+             bearishBOS ? "BOS Bearish → LL expected" :
+             trendDir == "Bullish" ? "Trend Bullish → Wait for HL" :
+             trendDir == "Bearish" ? "Trend Bearish → Wait for LH" :
+             "Neutral → No new structure"
+
+if barstate.islast and not minimalMode and anticipate != "Neutral → No new structure"
+    label.new(bar_index + 1, low, anticipate, style=label.style_label_left, color=color.aqua, textcolor=color.black, size=size.normal)
+
+// ──────────────────────────────────────
+// === DASHBOARD TABLE ===
+// ──────────────────────────────────────
+
+// Define dashboard position
+pos = dashboardPosition == "Top Left" ? position.top_left :
+      dashboardPosition == "Top Right" ? position.top_right :
+      dashboardPosition == "Bottom Left" ? position.bottom_left :
+      position.bottom_right
+
+// Create dashboard table
+var table infoTable = table.new(pos, 1, 9, border_width=1, bgcolor=color.new(color.black, 85), frame_color=color.white)
+
+if barstate.islast and not minimalMode
+    table.cell(infoTable, 0, 0, "Trend: " + trendDir, text_color=color.white)
+    table.cell(infoTable, 0, 1, "Last High: " + lastHighType, text_color=color.white)
+    table.cell(infoTable, 0, 2, "Last Low: " + lastLowType, text_color=color.white)
+    table.cell(infoTable, 0, 3, "Next: " + nextExpect, text_color=color.yellow)
+
+    bosText = bullishBOS ? "↑ Bullish BOS" : bearishBOS ? "↓ Bearish BOS" : "—"
+    table.cell(infoTable, 0, 4, "BOS: " + bosText, text_color=color.teal)
+
+    chochText = bullishCHoCH ? "↑ Bullish CHoCH" : bearishCHoCH ? "↓ Bearish CHoCH" : "—"
+    table.cell(infoTable, 0, 5, "CHoCH: " + chochText, text_color=color.orange)
+
+    accText = (showPredictionAccuracy and predictionRate >= 0) ? "Accuracy: " + str.tostring(predictionRate, "#.##") + "% (" + getConfidenceLabel(predictionRate) + ")" : "Accuracy: —"
+    table.cell(infoTable, 0, 6, accText, text_color=color.green)
+
+    table.cell(infoTable, 0, 7, "🧠 Anticipate: " + anticipate, text_color=color.aqua)
+
+// ──────────────────────────────────────
+// === FVG ZONES + AUTO-DELETE LOGIC (Trend-Aware) ===
+// ──────────────────────────────────────
+var box[] bullFVGs = array.new_box()
+var box[] bearFVGs = array.new_box()
+var int[] bullFVGbars = array.new_int()
+var int[] bearFVGbars = array.new_int()
+
+// Create FVGs
+if showFVG
+    // Bullish FVG
+    if low[2] > high[1] and (not useTrendFilter or trendDir == "Bullish")
+        b = box.new(bar_index - 2, low[2], bar_index, high[1],border_color=color.new(color.lime, 0),bgcolor=showFVGFill ? color.new(color.lime, 90) : na,extend=fvgExtend)
+        array.push(bullFVGs, b)
+        array.push(bullFVGbars, bar_index)
+
+    // Bearish FVG
+    if high[2] < low[1] and (not useTrendFilter or trendDir == "Bearish")
+        b = box.new(bar_index - 2, high[1], bar_index, low[2],border_color=color.new(color.red, 0),bgcolor=showFVGFill ? color.new(color.red, 90) : na,extend=fvgExtend)
+        array.push(bearFVGs, b)
+        array.push(bearFVGbars, bar_index)
+
+    // Limit maximum FVGs per direction
+    while array.size(bullFVGs) > maxFVGs
+        box.delete(array.shift(bullFVGs))
+        array.shift(bullFVGbars)
+    while array.size(bearFVGs) > maxFVGs
+        box.delete(array.shift(bearFVGs))
+        array.shift(bearFVGbars)
+
+// ──────────────────────────────────────
+// === TAP DETECTION + REMOVE ===
+// ──────────────────────────────────────
+// Bullish FVG taps
+if markTapEntry and array.size(bullFVGs) > 0
+    for idx = 0 to array.size(bullFVGs) - 1
+        i = array.size(bullFVGs) - 1 - idx  // reverse index
+        if i >= 0 and i < array.size(bullFVGs)
+            f = array.get(bullFVGs, i)
+            if low <= box.get_top(f) and low >= box.get_bottom(f)
+                label.new(bar_index, low, "🟢 FVG Tap",style=label.style_label_left,color=na, textcolor=color.lime, size=size.tiny)
+                box.delete(f)
+                array.remove(bullFVGs, i)
+                array.remove(bullFVGbars, i)
+                break
+
+// Bearish FVG taps
+if markTapEntry and array.size(bearFVGs) > 0
+    for idx = 0 to array.size(bearFVGs) - 1
+        i = array.size(bearFVGs) - 1 - idx
+        if i >= 0 and i < array.size(bearFVGs)
+            f = array.get(bearFVGs, i)
+            if high >= box.get_bottom(f) and high <= box.get_top(f)
+                label.new(bar_index, high, "🔴 FVG Tap",style=label.style_label_left,color=na, textcolor=color.white, size=size.tiny)
+                box.delete(f)
+                array.remove(bearFVGs, i)
+                array.remove(bearFVGbars, i)
+                break
+
+// ──────────────────────────────────────
+// === AUTO-DELETE EXPIRED FVGs ===
+// ──────────────────────────────────────
+if array.size(bullFVGs) > 0
+    for idx = 0 to array.size(bullFVGs) - 1
+        i = array.size(bullFVGs) - 1 - idx
+        if i >= 0 and i < array.size(bullFVGs)
+            if bar_index - array.get(bullFVGbars, i) > fvgMaxLife
+                box.delete(array.get(bullFVGs, i))
+                array.remove(bullFVGs, i)
+                array.remove(bullFVGbars, i)
+
+if array.size(bearFVGs) > 0
+    for idx = 0 to array.size(bearFVGs) - 1
+        i = array.size(bearFVGs) - 1 - idx
+        if i >= 0 and i < array.size(bearFVGs)
+            if bar_index - array.get(bearFVGbars, i) > fvgMaxLife
+                box.delete(array.get(bearFVGs, i))
+                array.remove(bearFVGs, i)
+                array.remove(bearFVGbars, i)
+
+// ──────────────────────────────────────
+// === BUY/SELL SIGNALS (EMA CROSSOVER) ===
+// ──────────────────────────────────────
+
+var bool buy  = false
+var bool sell = false
+var int buyC  = 0
+var int sellC = 0
+
+if enableBuySell
+    fastEMA = ta.ema(close, fastLen)
+    slowEMA = ta.ema(close, slowLen)
+    crossUp = ta.crossover(fastEMA, slowEMA)
+    crossDn = ta.crossunder(fastEMA, slowEMA)
+
+    buy := crossUp and buyC == 0 and (not emaConfirm or crossUp)
+    sell := crossDn and sellC == 0 and (not emaConfirm or crossDn)
+
+    if buy
+        buyC := 1
+        sellC := 0
+
+    if sell
+        sellC := 1
+        buyC := 0
+
+// Plot Buy/Sell shapes
+plotshape(buy,  title="Buy",  style=shape.labelup,   location=location.belowbar, color=color.green, text="BUY")
+plotshape(sell, title="Sell", style=shape.labeldown, location=location.abovebar, color=color.red,   text="SELL")
+
+// ──────────────────────────────────────
+// === ALERT CONDITIONS ===
+// ──────────────────────────────────────
+alertcondition(low[1] > high[2] and bullishBOS, "Bullish FVG", "📈 Bullish FVG formed")
+alertcondition(high[1] < low[2] and bearishBOS, "Bearish FVG", "📉 Bearish FVG formed")
+alertcondition(buy, "Buy Alert", "Buy signal triggered")
+alertcondition(sell, "Sell Alert", "Sell signal triggered")
+alertcondition(bullishCHoCH, "Bullish CHoCH", "Bullish Change of Character")
+alertcondition(bearishCHoCH, "Bearish CHoCH", "Bearish Change of Character")
+alertcondition(bullishBOS, "Bullish BOS", "Bullish Break of Structure")
+alertcondition(bearishBOS, "Bearish BOS", "Bearish Break of Structure")
+
+// ──────────────────────────────────────
+// === CHoCH & BOS LABELS + CLEANUP SYSTEM ===
+// ──────────────────────────────────────
+
+// Declare label variables first
+var label bullishChochLbl = na
+var label bearishChochLbl = na
+var label bullishBOSLbl   = na
+var label bearishBOSLbl   = na
+
+// ──────────────────────────────────────
+// === PERIODIC CLEANUP TO AVOID LABEL/LINES OVERLOAD ===
+// ──────────────────────────────────────
+if barstate.islast and bar_index % 300 == 0
+    // Delete old CHoCH/BOS labels every ~300 bars to prevent overflow
+    if not na(bullishChochLbl)
+        label.delete(bullishChochLbl)
+        bullishChochLbl := na
+    if not na(bearishChochLbl)
+        label.delete(bearishChochLbl)
+        bearishChochLbl := na
+    if not na(bullishBOSLbl)
+        label.delete(bullishBOSLbl)
+        bullishBOSLbl := na
+    if not na(bearishBOSLbl)
+        label.delete(bearishBOSLbl)
+        bearishBOSLbl := na
+
+    // Optional: clear older prediction label
+    if bar_index % 600 == 0 and not na(predLbl)
+        label.delete(predLbl)
+        predLbl := na
+
+// === CLEAN CHoCH & BOS LABEL SYSTEM ===
+// Keep last few structure labels only
+var label[] structureLabels = array.new<label>()
+
+// Dynamically adjust how many labels to keep based on HTF selection
+maxStructureLabels = switch htf
+    "1"     => 6
+    "5"     => 6
+    "15"    => 8
+    "30"    => 10
+    "60"    => 12
+    "120"   => 15
+    "240"   => 18
+    "D"     => 25
+    "W"     => 30
+    "M"     => 40
+    => 8
+
+addStructureLabel(lbl) =>
+    array.push(structureLabels, lbl)
+    // Delete oldest label if over limit
+    if array.size(structureLabels) > maxStructureLabels
+        oldLbl = array.shift(structureLabels)
+        label.delete(oldLbl)
+
+// === LABEL WITH EXTENDED DOTTED CONNECTOR (text at end) ===
+drawLabelWithLine(_barOffset, _y, _text, _style, _lineColor) =>
+    offsetMultiplier = str.contains(_text, "BOS") ? 8 : 4
+    lineEnd = bar_index + (_barOffset * offsetMultiplier)
+
+    // Draw the dotted line first
+    line.new(bar_index, _y, lineEnd, _y, style=line.style_dotted, color=_lineColor)
+
+    // Now place the label at the END of the line
+    lbl = label.new(lineEnd, _y, _text,style=_style, color=na, textcolor=color.white,size=size.small, textalign=text.align_left)
+    lbl
+
+// --- Compact CHoCH & BOS labels ---
+if bullishCHoCH
+    lbl = drawLabelWithLine(chochLabelOffset, high,"🔶 CHoCH ↑ $" + str.tostring(high, "#.##"),label.style_label_left, color.orange)
+    addStructureLabel(lbl)
+
+if bearishCHoCH
+    lbl = drawLabelWithLine(chochLabelOffset, low,"🔶 CHoCH ↓ $" + str.tostring(low, "#.##"),label.style_label_left, color.orange)
+    addStructureLabel(lbl)
+
+if bullishBOS
+    lbl = drawLabelWithLine(bosLabelOffset, high,"🟢 BOS ↑ $" + str.tostring(high, "#.##"),label.style_label_left, color.lime)
+    addStructureLabel(lbl)
+
+if bearishBOS
+    lbl = drawLabelWithLine(bosLabelOffset, low,"🔴 BOS ↓ $" + str.tostring(low, "#.##"),label.style_label_left, color.red)
+    addStructureLabel(lbl)
+
+// ──────────────────────────────────────
+// === HH/HL/LH/LL SWING TAGS (Optional) ===
+// ──────────────────────────────────────
+if showSwingTags
+    if not na(pivotHigh)
+        swingText = high > lastHigh ? "HH" : "LH"
+        label.new(bar_index, high, swingText,style=label.style_label_down,color=high > lastHigh ? color.lime : color.orange,textcolor=color.black, size=size.tiny)
+
+    if not na(pivotLow)
+        swingText = low < lastLow ? "LL" : "HL"
+        label.new(bar_index, low, swingText,style=label.style_label_up,color=low < lastLow ? color.red : color.green,textcolor=color.white, size=size.tiny)
+
+// ──────────────────────────────────────
+// === CHEAT SHEET GUIDE ===
+// ──────────────────────────────────────
+var table cheat = na
+if showCheatSheet
+    if na(cheat)
+        cheat := table.new(position.bottom_left, 1, 9, bgcolor=color.new(#1e1e1e, 30), border_width=2, border_color=color.fuchsia)
+        table.cell(cheat, 0, 0, "SMC QUICK GUIDE", text_color=color.yellow, text_size=size.normal)
+        table.cell(cheat, 0, 1, "CHoCH ↑ → Expect HL (reversal)", text_color=color.orange)
+        table.cell(cheat, 0, 2, "CHoCH ↓ → Expect LH (reversal)", text_color=color.orange)
+        table.cell(cheat, 0, 3, "BOS   ↑ → Expect HH (continuation)", text_color=color.lime)
+        table.cell(cheat, 0, 4, "BOS   ↓ → Expect LL (continuation)", text_color=color.red)
+        table.cell(cheat, 0, 5, "HH = Higher High", text_color=color.lime)
+        table.cell(cheat, 0, 6, "HL = Higher Low", text_color=color.green)
+        table.cell(cheat, 0, 7, "LH = Lower High", text_color=color.orange)
+        table.cell(cheat, 0, 8, "LL = Lower Low", text_color=color.red)
+else
+    if not na(cheat)
+        table.delete(cheat)
+        cheat := na
+
+// ──────────────────────────────────────
+// === AUTO TIMEFRAME DETECTION + STANDARD MODE SYSTEM ===
+// ──────────────────────────────────────
+
+// Define modes for standardized setups
+var string mode = "Manual"
+var string htfAuto = htf
+var int fractalAuto = fractalSensitivity
+var int fvgLifeAuto = fvgMaxLife
+var int maxFVGAuto = maxFVGs
+var int fastAuto = fastLen
+var int slowAuto = slowLen
+
+// Detect chart timeframe and set mode
+if timeframe.period == "1D"
+    mode := "1D Tactical Mode (HTF 3D)"
+    htfAuto := "3D"
+    fractalAuto := 5
+    fvgLifeAuto := 60
+    maxFVGAuto := 3
+    fastAuto := 9
+    slowAuto := 21
+
+else if timeframe.period == "3D"
+    mode := "3D Swing Mode (HTF 5D)"
+    htfAuto := "5D"
+    fractalAuto := 7
+    fvgLifeAuto := 80
+    maxFVGAuto := 4
+    fastAuto := 21
+    slowAuto := 50
+
+else if timeframe.period == "1W"
+    mode := "1W Macro Mode (HTF 12D)"
+    htfAuto := "12D"
+    fractalAuto := 9
+    fvgLifeAuto := 120
+    maxFVGAuto := 5
+    fastAuto := 34
+    slowAuto := 89
+
+else
+    mode := "Manual (Custom TF)"
+    htfAuto := htf
+    fractalAuto := fractalSensitivity
+    fvgLifeAuto := fvgMaxLife
+    maxFVGAuto := maxFVGs
+    fastAuto := fastLen
+    slowAuto := slowLen
+
+// Apply adjusted parameters
+htf := htfAuto
+fractalSensitivity := fractalAuto
+fvgMaxLife := fvgLifeAuto
+maxFVGs := maxFVGAuto
+fastLen := fastAuto
+slowLen := slowAuto
+
+// Show mode on chart (in dashboard if present)
+if barstate.islast
+    table.cell(infoTable, 0, 7, "Mode: " + mode, text_color=color.yellow)
+
+// === END OF SCRIPT ===

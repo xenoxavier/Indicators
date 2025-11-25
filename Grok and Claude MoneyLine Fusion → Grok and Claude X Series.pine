@@ -1,0 +1,207 @@
+//@version=6
+indicator("Grok/Claude MoneyLine Fusion * Grok/Claude X Series",
+          shorttitle="ML Fusion X", overlay=true, max_bars_back=5000, max_labels_count=500)
+
+// ── INPUT GROUPS ──────────────────────────────────────────────────
+groupGeneral   = "General Settings"
+groupGrok      = "Grok Dynamic Bands"
+groupAroon     = "Aroon Signal Filters"
+groupFisher    = "Fisher Transform Signal Levels"
+groupDisplay   = "Display Settings"
+
+// General
+length            = input.int(16, "Money Line Length", group=groupGeneral)
+atrPeriod         = input.int(12, "ATR Period", group=groupGeneral)
+atrMultiplier     = input.float(1.5, "Base ATR Multiplier", step=0.1, group=groupGeneral)
+neutralTolerance  = input.float(0.08, "Neutral Slope Tolerance (x ATR)", group=groupGeneral)
+slopeLookback     = input.int(1, "Slope Smoothing Lookback", group=groupGeneral)
+
+// Grok Bands
+enableGrok        = input.bool(true, "Enable Grok Dynamic Enveloping Bands", group=groupGrok)
+adxLen            = input.int(14, "ADX Length", group=groupGrok)
+diSmoothing       = input.int(14, "DI Smoothing", group=groupGrok)
+adxThresh         = input.float(22, "ADX Threshold", group=groupGrok)
+maxMult           = input.float(4.8, "Max Multiplier (Strong Trend)", group=groupGrok)
+
+// Aroon Filters (user adjustable)
+aroonLength        = input.int(12, "Aroon Lookback Period", minval=5, maxval=50, group=groupAroon)
+aroonUpSellLevel   = input.int(80, "Aroon Up > Level → Sell", minval=50, maxval=100, group=groupAroon)
+aroonDownSellLevel = input.int(20, "Aroon Down < Level → Sell", minval=0, maxval=50, group=groupAroon)
+aroonUpBuyLevel    = input.int(20, "Aroon Up < Level → Buy", minval=0, maxval=50, group=groupAroon)
+aroonDownBuyLevel  = input.int(80, "Aroon Down > Level → Buy", minval=50, maxval=100, group=groupAroon)
+
+// Fisher Transform Levels (SIMPLIFIED - NO LOOKBACK)
+fisherLength       = input.int(10, "Fisher Transform Period", minval=5, maxval=50, group=groupFisher)
+fisherBuyLevel     = input.float(-2.0, "Fisher Below Level → Buy Trigger", step=0.1, group=groupFisher)
+fisherSellLevel    = input.float(2.0,  "Fisher Above Level → Sell Trigger", step=0.1, group=groupFisher)
+useTAFilter        = input.bool(false, "Require TA Score Confirmation", group=groupFisher)
+taScoreThreshold   = input.int(2, "Minimum TA Score (if enabled)", minval=0, maxval=7, group=groupFisher)
+
+// Display
+showShades        = input.bool(true, "Show Shaded Bands", group=groupDisplay)
+showBands         = input.bool(true, "Show Band Lines", group=groupDisplay)
+showPriceLabels   = input.bool(true, "Show Entry/Exit Labels", group=groupDisplay)
+showInfoPanel     = input.bool(true, "Show Info Panel", group=groupDisplay)
+showScore         = input.bool(true, "Show Scoring Bar", group=groupDisplay)
+showDebugInfo     = input.bool(false, "Show Debug Info on Chart", group=groupDisplay)
+bullColor         = input.color(color.new(color.green, 0), "Bull Color", group=groupDisplay)
+bearColor         = input.color(color.new(color.red, 0), "Bear Color", group=groupDisplay)
+neutralColor      = input.color(color.new(color.yellow, 0), "Neutral Color", group=groupDisplay)
+
+// ── CORE CALCULATIONS ─────────────────────────────────────────────
+moneyLine = ta.linreg(close, length, 0)
+atrValue  = ta.atr(atrPeriod)
+[_, _, adxRaw] = ta.dmi(adxLen, diSmoothing)
+sadx = ta.sma(adxRaw, 3)
+
+mult = enableGrok and sadx > adxThresh ?
+     math.min(maxMult, atrMultiplier + (sadx - adxThresh)/(100 - adxThresh) * (maxMult - atrMultiplier))
+     : atrMultiplier
+
+upperBand = moneyLine + atrValue * mult
+lowerBand = moneyLine - atrValue * mult
+
+avgSlope = nz(ta.sma(moneyLine - moneyLine[1], slopeLookback), 0)
+trend = math.abs(avgSlope) < atrValue * neutralTolerance ? 0 : avgSlope > 0 ? 1 : -1
+lineColor = trend == 1 ? bullColor : trend == -1 ? bearColor : neutralColor
+
+// Shading
+p1 = plot(showBands ? upperBand : na, color=color.gray, title="Upper Band")
+p2 = plot(showBands ? lowerBand : na, color=color.gray, title="Lower Band")
+fillColor = showShades ? (trend == 1 ? color.new(bullColor, 80) : trend == -1 ? color.new(bearColor, 80) : color.new(neutralColor, 80)) : na
+fill(p1, p2, color=fillColor)
+
+// ── FISHER TRANSFORM (SIMPLIFIED) ─────────────────────────────────
+mid = (high + low) / 2
+var float val = 0.0
+var float fish = 0.0
+h = ta.highest(mid, fisherLength)
+l = ta.lowest(mid, fisherLength)
+val := 0.66 * ((mid - l) / math.max(h - l, 0.001) - 0.5) + 0.67 * nz(val[1])
+val := math.min(math.max(val, -0.999), 0.999)
+fish := 0.5 * math.log((1 + val) / (1 - val)) + 0.5 * nz(fish[1])
+fisher = fish
+
+// ── AROON (CORRECTED MANUAL CALCULATION) ─────────────────────────
+barsSinceHigh = ta.highestbars(high, aroonLength)
+barsSinceLow = ta.lowestbars(low, aroonLength)
+aroonUp   = 100.0 * (aroonLength + barsSinceHigh) / aroonLength
+aroonDown = 100.0 * (aroonLength + barsSinceLow) / aroonLength
+
+// ── SCORING SYSTEM (CALCULATE BEFORE SIGNALS) ────────────────────
+[macdLine, macdSignal, macdHist] = ta.macd(close, 12, 26, 9)
+[plus_di, minus_di, adx_dmi]    = ta.dmi(14, 14)
+
+// RSI component
+rsi = ta.rsi(close, 14)
+
+// MFI calculation
+typical = (high + low + close) / 3
+rmf = typical * volume
+pmf = math.sum(ta.change(typical) > 0 ? rmf : 0, 14)
+nmf = math.sum(ta.change(typical) < 0 ? rmf : 0, 14)
+mfr = nmf != 0 ? pmf / nmf : 1
+mfi = 100 - 100 / (1 + mfr)
+
+// Enhanced scoring with more granular levels
+macdScore = macdLine > macdSignal ? (macdHist > macdHist[1] ? 2 : 1) : macdLine < macdSignal ? (macdHist < macdHist[1] ? -2 : -1) : 0
+dmiScore = plus_di > minus_di ? (plus_di - minus_di > 10 ? 2 : 1) : (minus_di - plus_di > 10 ? -2 : -1)
+mfiScore = mfi < 20 ? 2 : mfi < 40 ? 1 : mfi > 80 ? -2 : mfi > 60 ? -1 : 0
+rsiScore = rsi < 30 ? 1 : rsi > 70 ? -1 : 0
+
+total_score = macdScore + dmiScore + mfiScore + rsiScore
+
+// ── SIMPLIFIED SIGNAL LOGIC (NO LOOKBACK + TA FILTER) ────────────
+// Fisher condition: Simply check if Fisher is in the appropriate zone
+fisherBuyCondition  = fisher < fisherBuyLevel   // Below -2.0 = oversold
+fisherSellCondition = fisher > fisherSellLevel  // Above +2.0 = overbought
+
+// Full buy/sell signals with all conditions (including optional TA Score filter)
+buySignal  = fisherBuyCondition  and 
+             aroonUp   < aroonUpBuyLevel   and 
+             aroonDown > aroonDownBuyLevel and
+             (not useTAFilter or total_score >= taScoreThreshold)
+
+sellSignal = fisherSellCondition and 
+             aroonUp   > aroonUpSellLevel  and 
+             aroonDown < aroonDownSellLevel and
+             (not useTAFilter or total_score <= -taScoreThreshold)
+
+// Additional filter: prevent duplicate signals within 5 bars
+var int lastBuyBar = -100
+var int lastSellBar = -100
+
+buySignalFiltered = buySignal and (bar_index - lastBuyBar) > 5
+sellSignalFiltered = sellSignal and (bar_index - lastSellBar) > 5
+
+if buySignalFiltered
+    lastBuyBar := bar_index
+if sellSignalFiltered
+    lastSellBar := bar_index
+
+// Bright Blue Candle on Signal
+barcolor(buySignalFiltered or sellSignalFiltered ? color.new(#0099FF, 0) : na, title="Signal Candle → Bright Blue")
+
+// ── PLOTTING ──────────────────────────────────────────────────────
+plot(moneyLine, color=lineColor, linewidth=2, title="Money Line")
+
+plotshape(showScore and total_score == 0, location=location.bottom, color=neutralColor, style=shape.square, size=size.small, title="Neutral Score")
+plotshape(showScore and total_score > 0,  location=location.bottom, color=color.green, style=shape.square, size=size.small, title="Bullish Score")
+plotshape(showScore and total_score < 0,  location=location.bottom, color=color.red,   style=shape.square, size=size.small, title="Bearish Score")
+
+// Labels with price only
+if showPriceLabels
+    if buySignalFiltered
+        labelOffset = low - (atrValue * 0.5)
+        label.new(bar_index, labelOffset,  "BUY: " + str.tostring(close, "#.##"), 
+                  style=label.style_label_up, color=color.green, textcolor=color.white, size=size.normal)
+    if sellSignalFiltered
+        labelOffset = high + (atrValue * 0.5)
+        label.new(bar_index, labelOffset, "SELL: " + str.tostring(close, "#.##"), 
+                  style=label.style_label_down, color=color.red, textcolor=color.white, size=size.normal)
+
+// Debug info - UPDATED
+if showDebugInfo and barstate.islast
+    var table debugTable = table.new(position.bottom_left, 2, 6, border_width=1)
+    table.cell(debugTable, 0, 0, "Fisher", bgcolor=color.gray, text_color=color.white)
+    table.cell(debugTable, 1, 0, str.tostring(fisher, "#.##"))
+    table.cell(debugTable, 0, 1, "Aroon Up", bgcolor=color.gray, text_color=color.white)
+    table.cell(debugTable, 1, 1, str.tostring(aroonUp, "#.##"))
+    table.cell(debugTable, 0, 2, "Aroon Down", bgcolor=color.gray, text_color=color.white)
+    table.cell(debugTable, 1, 2, str.tostring(aroonDown, "#.##"))
+    table.cell(debugTable, 0, 3, "TA Score", bgcolor=color.gray, text_color=color.white)
+    table.cell(debugTable, 1, 3, str.tostring(total_score) + (useTAFilter ? " (Filter: ±" + str.tostring(taScoreThreshold) + ")" : " (No Filter)"))
+    table.cell(debugTable, 0, 4, "Fisher Conditions", bgcolor=color.gray, text_color=color.white)
+    table.cell(debugTable, 1, 4, "Buy: " + str.tostring(fisherBuyCondition) + " | Sell: " + str.tostring(fisherSellCondition))
+    table.cell(debugTable, 0, 5, "Signal Active", bgcolor=color.gray, text_color=color.white)
+    table.cell(debugTable, 1, 5, (buySignal ? "BUY " : "") + (sellSignal ? "SELL" : ""))
+
+// ── INFO PANEL (ENHANCED) ─────────────────────────────────────────
+var table infoTable = table.new(position.top_right, 2, 4, border_width=1, frame_width=1, bgcolor=color.new(color.black, 90))
+volRank = ta.percentrank(atrValue, 100)
+volBg = volRank < 30 ? color.green : volRank > 70 ? color.red : color.orange
+
+// Enhanced score description
+scoreText = total_score >= 4 ? "very bullish" : total_score >= 2 ? "bullish" : total_score >= 1 ? "slightly bullish" : total_score <= -4 ? "very bearish" : total_score <= -2 ? "bearish" : total_score <= -1 ? "slightly bearish" : "neutral"
+            
+scoreBg = total_score >= 2 ? color.lime : total_score <= -2 ? color.red : total_score == 0 ? color.gray : color.yellow
+scoreTextColor = scoreBg == color.yellow or scoreBg == color.gray ? color.black : color.white
+moneyLineTextColor = trend == 0 ? color.black : color.white
+
+if barstate.islast and showInfoPanel
+    table.cell(infoTable, 0, 0, "Money Line", text_color=moneyLineTextColor, bgcolor=lineColor)
+    table.cell(infoTable, 1, 0, str.tostring(moneyLine, "#.##"), text_color=moneyLineTextColor, bgcolor=lineColor)
+    
+    table.cell(infoTable, 0, 1, "Volatility", text_color=color.white, bgcolor=color.new(color.gray, 70))
+    table.cell(infoTable, 1, 1, str.tostring(volRank, "0") + "%", text_color=color.white, bgcolor=volBg)
+    
+    table.cell(infoTable, 0, 2, "RSI", text_color=color.white, bgcolor=color.new(color.gray, 70))
+    rsiColor = rsi < 30 ? color.lime : rsi > 70 ? color.red : color.gray
+    table.cell(infoTable, 1, 2, str.tostring(rsi, "#.#"), text_color=color.white, bgcolor=color.new(rsiColor, 70))
+    
+    table.cell(infoTable, 0, 3, "TA Score", text_color=color.white, bgcolor=color.new(color.gray, 70))
+    table.cell(infoTable, 1, 3, scoreText + "\n" + str.tostring(total_score), text_color=scoreTextColor, bgcolor=scoreBg)
+
+// ── ALERTS ────────────────────────────────────────────────────────
+alertcondition(buySignalFiltered,  title="ML Fusion BUY",  message="MoneyLine Fusion → BUY Signal | Price: {{close}} | Fisher: {{plot_0}}")
+alertcondition(sellSignalFiltered, title="ML Fusion SELL", message="MoneyLine Fusion → SELL Signal | Price: {{close}} | Fisher: {{plot_0}}")

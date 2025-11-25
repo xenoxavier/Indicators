@@ -1,0 +1,124 @@
+//@version=6
+indicator(" (CRT) MTF Candle Range Theory Model", overlay=true, max_lines_count=200, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════════
+// ── INPUTS (Organized in Categories)
+// ═══════════════════════════════════════════════════════
+
+// — Timeframe & Signal Mode —
+group_tf = "Timeframe & Signal Mode"
+mtf         = input.timeframe("", "Higher Timeframe", group=group_tf)
+showHTF     = input.bool(true, "Show Higher TF Signals Only", group=group_tf)
+
+// — RSI Filter —
+group_rsi = "RSI Filter"
+useRSI      = input.bool(true, "Enable RSI Filter", group=group_rsi)
+rsiLen      = input.int(14, "RSI Length", minval=1, group=group_rsi)
+rsiLong     = input.float(30, "RSI Oversold Level (Long)", minval=0, maxval=100, group=group_rsi)
+rsiShort    = input.float(70, "RSI Overbought Level (Short)", minval=0, maxval=100, group=group_rsi)
+
+// — Day-2 Levels Appearance —
+group_levels = "Day-2 High/Low Lines & Labels"
+hiColor     = input.color(color.red,   "Day-2 High Color", group=group_levels)
+loColor     = input.color(color.green, "Day-2 Low Color",  group=group_levels)
+lineWidth   = input.int(2, "Line Width", minval=1, maxval=5, group=group_levels)
+lineStyle   = input.string("Dashed", "Line Style", options=["Solid", "Dashed", "Dotted"], group=group_levels)
+showLabels  = input.bool(true, "Show Day-2 Labels", group=group_levels)
+labelSize   = input.string("Small", "Day-2 Label Size", options=["Tiny", "Small", "Normal", "Large"], group=group_levels)
+
+// — Signal Labels —
+group_signals = "Signal Labels"
+longColor   = input.color(color.green, "Long Label Color", group=group_signals)
+shortColor  = input.color(color.red,  "Short Label Color", group=group_signals)
+longText    = input.string("LONG",   "Long Text",  group=group_signals)
+shortText   = input.string("SHORT",  "Short Text", group=group_signals)
+sigLabelSize= input.string("Tiny", "Signal Label Size", options=["Tiny","Small","Normal","Large","Huge"], group=group_signals)
+
+// — Background (optional) —
+group_bg = "Background Highlight"
+showBg      = input.bool(true, "Highlight Background on Signal", group=group_bg)
+
+// ═══════════════════════════════════════════════════════
+// ── MAPPINGS
+// ═══════════════════════════════════════════════════════
+lineStyleMap = lineStyle == "Solid" ? line.style_solid : lineStyle == "Dashed" ? line.style_dashed : line.style_dotted
+dayLabelSize = labelSize   == "Tiny" ? size.tiny : labelSize   == "Small" ? size.small : labelSize   == "Normal" ? size.normal : size.large
+sigLabelSizeMap = sigLabelSize == "Tiny" ? size.tiny : sigLabelSize == "Small" ? size.small : 
+                  sigLabelSize == "Normal" ? size.normal : sigLabelSize == "Large" ? size.large : size.huge
+
+// ═══════════════════════════════════════════════════════
+// ── Higher Timeframe Data
+// ═══════════════════════════════════════════════════════
+[d2OpenHTF,  d2HighHTF,  d2LowHTF,  d2CloseHTF,  d2RSI_HTF]  = request.security(syminfo.tickerid, mtf, [open[2],  high[2],  low[2],  close[2],  ta.rsi(close, rsiLen)[2]])
+[yOpenHTF,   yHighHTF,   yLowHTF,   yCloseHTF,   yRSI_HTF]   = request.security(syminfo.tickerid, mtf, [open[1],  high[1],  low[1],  close[1],  ta.rsi(close, rsiLen)[1]])
+
+// Current TF previous bars
+d2Open  = open[2]
+d2High  = high[2]
+d2Low   = low[2]
+d2Close = close[2]
+d2RSI   = ta.rsi(close, rsiLen)[2]
+
+yOpen   = open[1]
+yHigh   = high[1]
+yLow    = low[1]
+yClose  = close[1]
+yRSI    = ta.rsi(close, rsiLen)[1]
+
+// ═══════════════════════════════════════════════════════
+// ── RSI Conditions
+// ═══════════════════════════════════════════════════════
+rsiLongOK  = not useRSI or (d2RSI <= rsiLong or yRSI <= rsiLong or d2RSI_HTF <= rsiLong or yRSI_HTF <= rsiLong)
+rsiShortOK = not useRSI or (d2RSI >= rsiShort or yRSI >= rsiShort or d2RSI_HTF >= rsiShort or yRSI_HTF >= rsiShort)
+
+// ═══════════════════════════════════════════════════════
+// ── Pattern Logic
+// ═══════════════════════════════════════════════════════
+longBase  = yClose < yOpen and d2Close < d2Open and yLow < d2Low and yClose > d2Low and close > d2High and yHigh < d2High
+shortBase = yClose > yOpen and d2Close > d2Open and yHigh > d2High and yClose < d2High and close < d2Low and yLow > d2Low
+
+longPattern  = longBase  and rsiLongOK
+shortPattern = shortBase and rsiShortOK
+
+// MTF confirmation
+longMTF  = longPattern  and request.security(syminfo.tickerid, mtf, longBase)
+shortMTF = shortPattern and request.security(syminfo.tickerid, mtf, shortBase)
+
+finalLong  = showHTF ? longMTF  : longPattern
+finalShort = showHTF ? shortMTF : shortPattern
+
+// ═══════════════════════════════════════════════════════
+// ── Day-2 High/Low Lines & Labels (persistent)
+// ═══════════════════════════════════════════════════════
+var line  lHi = na
+var line  lLo = na
+var label lbHi = na
+var label lbLo = na
+
+if not na(d2High)
+    if na(lHi)
+        lHi := line.new(bar_index[2], d2High, bar_index[2], d2High, color=hiColor, width=lineWidth, style=lineStyleMap)
+        lLo := line.new(bar_index[2], d2Low,  bar_index[2], d2Low,  color=loColor, width=lineWidth, style=lineStyleMap)
+        
+        if showLabels
+            lbHi := label.new(bar_index[2], d2High, " Day-2 High", style=label.style_label_left, color=hiColor,   textcolor=color.white, size=dayLabelSize)
+            lbLo := label.new(bar_index[2], d2Low,  " Day-2 Low",  style=label.style_label_left, color=loColor,    textcolor=color.white, size=dayLabelSize)
+
+    // Extend lines
+    line.set_xy2(lHi, finalLong or finalShort ? bar_index : bar_index-1, d2High)
+    line.set_xy2(lLo, finalLong or finalShort ? bar_index : bar_index-1, d2Low)
+
+// ═══════════════════════════════════════════════════════
+// ── Signal Labels (directly on candle, no offset)
+// ═══════════════════════════════════════════════════════
+if finalLong
+    label.new(bar_index, low,  longText,  style=label.style_label_up,   color=longColor,  textcolor=color.white, size=sigLabelSizeMap)
+
+if finalShort
+    label.new(bar_index, high, shortText, style=label.style_label_down, color=shortColor, textcolor=color.white, size=sigLabelSizeMap)
+
+// ═══════════════════════════════════════════════════════
+// ── Optional Background Highlight
+// ═══════════════════════════════════════════════════════
+bgcolor(showBg and finalLong  ? color.new(longColor,  90) : na)
+bgcolor(showBg and finalShort ? color.new(shortColor, 90) : na)

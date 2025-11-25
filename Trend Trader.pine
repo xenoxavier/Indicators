@@ -1,0 +1,101 @@
+//@version=6
+indicator("Trend Trader", overlay=true)
+
+// === Editable EMA lengths ===
+length_ema_50  = input.int(50,  "EMA 50 Length",  minval=1)
+length_ema_100 = input.int(100, "EMA 100 Length", minval=1)
+length_ema_200 = input.int(200, "EMA 200 Length", minval=1)
+
+// --- EMAs ---
+ema_50  = ta.ema(close, length_ema_50)
+ema_100 = ta.ema(close, length_ema_100)
+ema_200 = ta.ema(close, length_ema_200)
+
+// Pair comparisons
+bull_50_100  = ema_50 > ema_100
+bull_100_200 = ema_100 > ema_200
+
+// Colors for pairs
+pair50_100_color  = bull_50_100  ? color.green : color.red
+pair100_200_color = bull_100_200 ? color.green : color.red
+
+// Per-EMA colors (EMA100 turns green if either adjacent pair is bullish)
+color_ema50  = bull_50_100 ? color.green : color.red
+color_ema100 = (bull_50_100 or bull_100_200) ? color.green : color.red
+color_ema200 = bull_100_200 ? color.green : color.red
+
+// --- Plots (with gradient layers) ---
+// EMA 50
+p50 = plot(ema_50,  color=color_ema50,  linewidth=2, title="EMA 50")
+plot(ema_50, color=color.new(color_ema50, 80), linewidth=10, editable=false)
+plot(ema_50, color=color.new(color_ema50, 90), linewidth=20, editable=false)
+plot(ema_50, color=color.new(color_ema50, 95), linewidth=30, editable=false)
+plot(ema_50, color=color.new(color_ema50, 98), linewidth=45, editable=false)
+
+// EMA 100
+p100 = plot(ema_100, color=color_ema100, linewidth=2, title="EMA 100")
+plot(ema_100, color=color.new(color_ema100, 80), linewidth=10, editable=false)
+plot(ema_100, color=color.new(color_ema100, 90), linewidth=20, editable=false)
+plot(ema_100, color=color.new(color_ema100, 95), linewidth=30, editable=false)
+plot(ema_100, color=color.new(color_ema100, 98), linewidth=45, editable=false)
+
+// EMA 200
+p200 = plot(ema_200, color=color_ema200, linewidth=2, title="EMA 200")
+plot(ema_200, color=color.new(color_ema200, 80), linewidth=10, editable=false)
+plot(ema_200, color=color.new(color_ema200, 90), linewidth=20, editable=false)
+plot(ema_200, color=color.new(color_ema200, 95), linewidth=30, editable=false)
+plot(ema_200, color=color.new(color_ema200, 98), linewidth=45, editable=false)
+
+// --- Fills between pairs ---
+// 50 <-> 100
+fill_color_50_100 = color.new(pair50_100_color, 80) // semi-transparent
+fill(p50, p100, color=fill_color_50_100)
+
+// 100 <-> 200
+fill_color_100_200 = color.new(pair100_200_color, 80)
+fill(p100, p200, color=fill_color_100_200)
+
+// -----------------------------------------------------------------------------
+// WaveTrend — NO smoothing / repaint option
+// -----------------------------------------------------------------------------
+
+// NEW: Toggle to show all WaveTrend signals regardless of trend
+showAllSignals = input.bool(false, "Show All Signals", tooltip="When ON, plot buy/sell signals from WaveTrend only (ignore EMA/200 filters). When OFF, require trend filters.")
+
+// WaveTrend Oscillator inputs
+wtChannelLen = input.int(9, title="Channel Length")
+wtAverageLen = input.int(4, title="Average Length")
+wtMALen = input.int(3, title="Moving Average Length")
+
+// WaveTrend Oscillator calculations
+ap = hlc3
+esa = ta.ema(ap, wtChannelLen)
+d = ta.ema(math.abs(ap - esa), wtChannelLen)
+ci = (ap - esa) / (0.015 * d)
+tci = ta.ema(ci, wtAverageLen)
+wt1 = tci
+wt2 = ta.sma(wt1, wtMALen)
+
+// Overbought and oversold levels
+overboughtLevel = 60
+oversoldLevel = -60
+
+// Raw WaveTrend-only signals
+waveBuyRaw  = ta.crossover(wt1, oversoldLevel)
+waveSellRaw = ta.crossunder(wt1, overboughtLevel)
+
+// Trend-filtered signals (original behavior)
+waveBuyTrend  = waveBuyRaw  and ema_50 > ema_100 and close > ema_200
+waveSellTrend = waveSellRaw and ema_50 < ema_100 and close < ema_200
+
+// Final signals depending on toggle
+buySignal  = showAllSignals ? waveBuyRaw  : waveBuyTrend
+sellSignal = showAllSignals ? waveSellRaw : waveSellTrend
+
+// Plot buy and sell signals
+plotshape(series=buySignal,  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small, title="Buy Entry")
+plotshape(series=sellSignal, style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small, title="Sell Entry")
+
+// Alerts (use the final signals)
+alertcondition(buySignal,  title="Buy Entry Alert",  message="Buy Entry Signal Triggered")
+alertcondition(sellSignal, title="Sell Entry Alert", message="Sell Entry Signal Triggered")

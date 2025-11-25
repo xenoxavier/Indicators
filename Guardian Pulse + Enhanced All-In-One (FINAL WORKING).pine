@@ -1,0 +1,89 @@
+//@version=6
+indicator("Guardian Pulse + Enhanced All-In-One (FINAL WORKING)", overlay=true, max_bars_back=500, max_lines_count=500)
+
+// ──────────────────────────────
+// 1. EMA Cloud (9, 21, 200)
+// ──────────────────────────────
+emaShort  = input.int(9,  "Short EMA")
+emaMedium = input.int(21, "Medium EMA")
+emaLong   = input.int(200,"Long EMA")
+
+ema1 = ta.ema(close, emaShort)
+ema2 = ta.ema(close, emaMedium)
+ema3 = ta.ema(close, emaLong)
+
+p1 = plot(ema1, color=color.new(color.green, 0), linewidth=2, title="EMA 9")
+p2 = plot(ema2, color=color.new(color.blue,  0), linewidth=2, title="EMA 21")
+p3 = plot(ema3, color=color.new(color.red,   0), linewidth=2, title="EMA 200")
+
+fill(p1, p2, color=ema1 > ema2 ? color.new(color.green, 85) : color.new(color.red, 85))
+
+// ──────────────────────────────
+// 2. RSI + MACD (for info bar)
+// ──────────────────────────────
+rsiLength   = input.int(14, "RSI Length")
+rsi         = ta.rsi(close, rsiLength)
+
+[macdLine, signalLine, _] = ta.macd(close, 12, 26, 9)
+
+// ──────────────────────────────
+// 3. Relative Volume
+// ──────────────────────────────
+showRVol = input.bool(true, "Show Relative Volume")
+rvolAvg  = ta.sma(volume, 50)
+rvolText = volume > 2 * rvolAvg ? "2x+" : volume > rvolAvg ? "Above Avg" : "Below Avg"
+
+// ──────────────────────────────
+// 4. Trend
+// ──────────────────────────────
+trend = ema1 > ema2 and ema2 > ema3 ? "Bullish" : ema1 < ema2 and ema2 < ema3 ? "Bearish" : "Neutral"
+
+// ──────────────────────────────
+// 5. GUARDIAN PULSE BUY/SELL (this is what you wanted)
+// ──────────────────────────────
+rsiBuyLevel   = input.int(35, "Guardian RSI Buy Level")
+rsiSellLevel  = input.int(65, "Guardian RSI Sell Level")
+volMultiplier = input.float(1.15, "Guardian Volume Multiplier", step=0.05)
+
+volAvg   = ta.sma(volume, 20)
+volOk    = volume > volAvg * volMultiplier
+
+buySignal  = ta.crossover(rsi, rsiBuyLevel) and close > ema2 and close > open and volOk
+sellSignal = ta.crossunder(rsi, rsiSellLevel)
+
+// Lime master-buy candles + arrows
+barcolor(buySignal ? color.new(#00ff00, 0) : na)
+
+plotshape(buySignal,  title="GUARDIAN BUY",  location=location.belowbar,
+          color=color.new(#00ff00, 0), style=shape.triangleup, size=size.large, text="BUY")
+
+plotshape(sellSignal, title="GUARDIAN SELL", location=location.abovebar,
+          color=color.red, style=shape.triangledown, size=size.large, text="SELL")
+
+// ──────────────────────────────
+// 6. Info Bar (top-right)
+// ──────────────────────────────
+var table info = table.new(position.top_right, 2, 6, border_width=1, frame_color=color.gray)
+
+if barstate.isfirst
+    table.cell(info, 0, 0, "GUARDIAN INFO", bgcolor=#363a45, text_color=color.white)
+    table.cell(info, 0, 1, "Trend",         bgcolor=#363a45, text_color=color.white)
+    table.cell(info, 0, 2, "MACD",          bgcolor=#363a45, text_color=color.white)
+    table.cell(info, 0, 3, "RSI",           bgcolor=#363a45, text_color=color.white)
+    table.cell(info, 0, 4, "RVol",          bgcolor=#363a45, text_color=color.white)
+    table.cell(info, 0, 5, "Signal",        bgcolor=#363a45, text_color=color.white)
+
+table.cell(info, 1, 1, trend,      bgcolor=trend == "Bullish" ? color.new(color.green, 80) : color.new(color.red, 80), text_color=color.white)
+table.cell(info, 1, 2, str.tostring(macdLine, "#.####"), bgcolor=#363a45, text_color=color.white)
+table.cell(info, 1, 3, str.tostring(rsi, "#.##"),        bgcolor=#363a45, text_color=color.white)
+table.cell(info, 1, 4, rvolText,   bgcolor=#363a45, text_color=color.white)
+table.cell(info, 1, 5, buySignal ? "BUY" : sellSignal ? "SELL" : "WAIT", 
+           bgcolor=buySignal ? color.green : sellSignal ? color.red : color.gray, text_color=color.white)
+
+// ──────────────────────────────
+// 7. Alerts
+// ──────────────────────────────
+alertcondition(buySignal,  title="GUARDIAN BUY",  message="GUARDIAN BUY {{ticker}} @ {{close}}")
+alertcondition(sellSignal, title="GUARDIAN SELL", message="GUARDIAN SELL {{ticker}}")
+alertcondition(trend == "Bullish", title="Bull Trend", message="Bullish Trend Started")
+alertcondition(trend == "Bearish", title="Bear Trend", message="Bearish Trend Started")

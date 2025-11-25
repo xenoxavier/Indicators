@@ -1,0 +1,136 @@
+//@version=5
+indicator("Universal Scalper Pro [Certified Golden Copy]", overlay=true)
+
+// ==========================================
+// 1. SETTINGS
+// ==========================================
+group_strat = "Strategy Settings"
+fastLen   = input.int(9, "Fast EMA (Signal)", group=group_strat)
+slowLen   = input.int(21, "Slow EMA (Trend)", group=group_strat)
+adxThresh = input.int(15, "Noise Filter (ADX > X)", tooltip="Prevents trading in choppy markets", group=group_strat)
+
+group_risk = "Risk Management"
+atrMult   = input.float(1.5, "Stop Loss (ATR x)", step=0.1, group=group_risk)
+tpMult    = input.float(2.0, "Take Profit (ATR x)", step=0.1, group=group_risk)
+
+userTimezone = input.string("UTC+4", "Your Timezone", options=["UTC+4", "UTC+5", "UTC+0", "UTC-4", "UTC-5"], group="Dashboard")
+
+// ==========================================
+// 2. MATH ENGINE
+// ==========================================
+emaFast = ta.ema(close, fastLen)
+emaSlow = ta.ema(close, slowLen)
+[diplus, diminus, adxValue] = ta.dmi(14, 14)
+isTrending = adxValue > adxThresh 
+atr = ta.atr(14)
+
+// ==========================================
+// 3. LOGIC
+// ==========================================
+longCond = ta.crossover(emaFast, emaSlow) and isTrending
+shortCond = ta.crossunder(emaFast, emaSlow) and isTrending
+
+isBullish = emaFast > emaSlow
+isBearish = emaFast < emaSlow
+
+currentEntry = close
+calcLongSL   = currentEntry - (atr * atrMult)
+calcLongTP   = currentEntry + (atr * tpMult)
+calcShortSL  = currentEntry + (atr * atrMult)
+calcShortTP  = currentEntry - (atr * tpMult)
+
+// ==========================================
+// 4. MEMORY & TARGET DETECTION
+// ==========================================
+var float activeEntry = na
+var float activeSL    = na
+var float activeTP    = na
+var string signalTime = "Waiting..."
+var string lastAction = "WAIT"
+var color statusColor = color.gray
+var bool isTargetHit  = false
+
+// Update on New Signal
+if longCond
+    activeEntry := currentEntry
+    activeSL    := calcLongSL
+    activeTP    := calcLongTP
+    lastAction  := "BUY / LONG"
+    statusColor := color.lime 
+    signalTime  := str.format_time(time, "dd MMM HH:mm", userTimezone)
+    isTargetHit := false // Reset target status
+
+if shortCond
+    activeEntry := currentEntry
+    activeSL    := calcShortSL
+    activeTP    := calcShortTP
+    lastAction  := "SELL / SHORT"
+    statusColor := color.red
+    signalTime  := str.format_time(time, "dd MMM HH:mm", userTimezone)
+    isTargetHit := false // Reset target status
+
+// CHECK IF TARGET HIT (Live Logic)
+if lastAction == "BUY / LONG" and high >= activeTP
+    isTargetHit := true
+if lastAction == "SELL / SHORT" and low <= activeTP
+    isTargetHit := true
+
+// ==========================================
+// 5. VISUALS
+// ==========================================
+plot(emaFast, "Fast EMA", color.yellow, 2)
+plot(emaSlow, "Slow EMA", color.blue, 2)
+fill(plot(emaFast), plot(emaSlow), color = isBullish ? color.new(color.green, 85) : color.new(color.red, 85), title="Trend Zone")
+
+if longCond
+    label.new(bar_index, low, syminfo.ticker + " BUY\n" + str.tostring(activeEntry, format.mintick), color=color.green, textcolor=color.white, style=label.style_label_up, size=size.small)
+if shortCond
+    label.new(bar_index, high, syminfo.ticker + " SELL\n" + str.tostring(activeEntry, format.mintick), color=color.red, textcolor=color.white, style=label.style_label_down, size=size.small)
+
+// ==========================================
+// 6. INTELLIGENT DASHBOARD
+// ==========================================
+var table dash = table.new(position.bottom_right, 2, 8, border_width=2, frame_color=color.white, frame_width=1)
+
+if barstate.islast
+    // Header
+    table.cell(dash, 0, 0, "💎 " + syminfo.ticker, bgcolor=color.gray, text_color=color.white)
+    table.cell(dash, 1, 0, "STATUS", bgcolor=color.gray, text_color=color.white)
+    
+    // Trend
+    table.cell(dash, 0, 1, "Trend (15m)", bgcolor=color.black, text_color=color.white)
+    if isBullish
+        table.cell(dash, 1, 1, "BULLISH", bgcolor=color.new(color.green, 30), text_color=color.white)
+    else
+        table.cell(dash, 1, 1, "BEARISH", bgcolor=color.new(color.red, 30), text_color=color.white)
+
+    // LAST SIGNAL (Updated Logic)
+    table.cell(dash, 0, 2, "LAST SIGNAL", bgcolor=color.black, text_color=color.white)
+    
+    // Logic: If Target Hit, Show BLUE. If Active, Show GREEN/RED.
+    if isTargetHit
+        table.cell(dash, 1, 2, "TARGET HIT ✅", bgcolor=color.blue, text_color=color.white)
+    else
+        table.cell(dash, 1, 2, lastAction, bgcolor=statusColor, text_color=lastAction == "WAIT" ? color.white : color.black)
+
+    // Signal Time
+    table.cell(dash, 0, 3, "Signal Time", bgcolor=color.black, text_color=color.white)
+    table.cell(dash, 1, 3, signalTime, bgcolor=color.white, text_color=color.black)
+
+    // Prices
+    table.cell(dash, 0, 4, "Entry", bgcolor=color.black, text_color=color.white)
+    table.cell(dash, 1, 4, na(activeEntry) ? "-" : str.tostring(activeEntry, format.mintick), bgcolor=color.white, text_color=color.black)
+    
+    table.cell(dash, 0, 5, "Stop Loss", bgcolor=color.black, text_color=color.white)
+    table.cell(dash, 1, 5, na(activeSL) ? "-" : str.tostring(activeSL, format.mintick), bgcolor=color.red, text_color=color.white)
+
+    table.cell(dash, 0, 6, "Take Profit", bgcolor=color.black, text_color=color.white)
+    table.cell(dash, 1, 6, na(activeTP) ? "-" : str.tostring(activeTP, format.mintick), bgcolor=color.green, text_color=color.white)
+
+// ==========================================
+// 7. ALERTS
+// ==========================================
+msg = "SCALP SIGNAL (" + syminfo.ticker + "): " + lastAction + "\nPrice: " + str.tostring(activeEntry, format.mintick) + "\nStop: " + str.tostring(activeSL, format.mintick) + "\nTarget: " + str.tostring(activeTP, format.mintick)
+
+if longCond or shortCond
+    alert(msg, alert.freq_once_per_bar_close)

@@ -1,0 +1,626 @@
+//@version=5
+indicator('Delta Zones Buy/Sell Pressure', overlay=true, format=format.price, max_labels_count=200, max_lines_count=50)
+
+// Standard deviation parameters
+stddevlevel = input.float(title='Standard Deviation', defval=3.5, step=0.5, group="Delta Zones Settings")
+stddevlookback = input.int(title='Standard Deviation Lookback', defval=20)
+
+// Box color inputs
+buyBoxColor = input.color(title='Buy Box Color', defval=color.new(color.green, 83))
+sellBoxColor = input.color(title='Sell Box Color', defval=color.new(color.red, 83))
+
+// Box border inputs
+buyBoxBorderColor = input.color(title='Buy Box Border Color', defval=color.green)
+sellBoxBorderColor = input.color(title='Sell Box Border Color', defval=color.red)
+boxBorderWidth = input.int(title='Box Border Width', defval=1, minval=1, maxval=5)
+
+// Box visibility inputs
+showBuyBoxes = input.bool(title='Show Buy Boxes', defval=true)
+showSellBoxes = input.bool(title='Show Sell Boxes', defval=true)
+
+// Import the ZigZag library
+import DevLucem/ZigLib/1 as ZigZag
+
+// User settings for ZigZag
+showLinesPA = input.bool(false, 'Price Action Lines', group="ZigZag Settings")
+depth = input.int(12, 'Depth', minval=1, step=1, group="ZigZag Settings")
+deviation = input.int(5, 'Deviation', minval=1, step=1, group="ZigZag Settings")
+backstep = input.int(2, 'Backstep', minval=2, step=1, group="ZigZag Settings")
+
+// Line and color settings
+lineThickness = input.int(1, 'Line Thickness', minval=1, maxval=4)
+bullColor = input.color(color.lime, 'Bullish Color')
+bearColor = input.color(color.red, 'Bearish Color')
+lineTransparency = input.int(0, 'Line Transparency')
+repaintLines = input.bool(true, 'Repaint Lines')
+extendLines = input.bool(false, 'Extend Lines')
+
+// --- UT Bot Alerts: New Inputs ---
+groupUT = "UT Bot Alerts Logic (Secondary Signals)"
+ut_a = input.float(1, title = "UT Bot: Key Value (Sensitivity)", group = groupUT)
+ut_c = input.int(10, title = "UT Bot: ATR Period", minval=1, group = groupUT)
+ut_h = input.bool(false, title = "UT Bot: Signals from Heikin Ashi", group = groupUT)
+showUTSignals = input.bool(true, title="Show UT Bot Signals", group = groupUT)
+showUTTrailingStop = input.bool(false, title="Plot UT Trailing Stop Line", group = groupUT)
+
+// Delta calculations
+uptop = high - close
+upbot = open - low
+dntop = high - open
+dnbot = close - low
+
+up_delta = upbot - uptop
+down_delta = dntop - dnbot
+delta = up_delta != 0 ? up_delta : down_delta != 0 ? down_delta : na
+
+// Positive and negative deltas
+pos_delta = delta > 0 ? delta : na
+neg_delta = delta < 0 ? delta : na
+
+wickdevup = ta.stdev(pos_delta, stddevlookback) * stddevlevel
+wickdevdn = ta.stdev(neg_delta, stddevlookback) * -stddevlevel
+
+// Identify outliers
+huntingup = pos_delta >= wickdevup
+huntingdn = neg_delta <= wickdevdn
+
+// Persistent variables for boxes
+var box buyBox = na
+var box sellBox = na
+
+// Draw boxes for Buy Pressure
+if (showBuyBoxes and huntingup)
+    buyBox := box.new(left=bar_index, top=(open <= close ? (open + low) / 2 : (close + low) / 2), 
+                      right=bar_index, bottom=low,
+                      bgcolor=buyBoxColor, border_width=boxBorderWidth, border_color=buyBoxBorderColor)
+else if (not na(buyBox))
+    box.set_right(buyBox, bar_index + 5)
+
+// Plot arrows for buy and sell
+plotshape(series=huntingup, location=location.belowbar, color=color.green, style=shape.triangleup, size=size.tiny, title="Buy Pressure")
+plotshape(series=huntingdn, location=location.abovebar, color=color.red, style=shape.triangledown, size=size.tiny, title="Sell Pressure")
+
+// Draw boxes for Sell Pressure
+if (showSellBoxes and huntingdn)
+    sellBox := box.new(left=bar_index, top=high, 
+                       right=bar_index, bottom=(open < close ? (close + high) / 2 : (open + high) / 2), 
+                       bgcolor=sellBoxColor, border_width=boxBorderWidth, border_color=sellBoxBorderColor)
+else if (not na(sellBox))
+    box.set_right(sellBox, bar_index + 5)
+
+// Alert conditions
+alertcondition(huntingup, title="Buy Pressure Alert", message="Buy pressure detected!")
+alertcondition(huntingdn, title="Sell Pressure Alert", message="Sell pressure detected!")
+
+// ZigZag Integration (Optional)
+if (showLinesPA)
+    // Calculate ZigZag points using the imported library
+    [direction, startPoint, endPoint] = ZigZag.zigzag(low, high, depth, deviation, backstep)
+
+    // Track the last ZigZag point
+    var float lastPoint = na
+
+    // Create a variable for the ZigZag line
+    var line zigzagLine = na
+
+    // Draw ZigZag lines
+    if (repaintLines)
+        if (not na(startPoint) and not na(endPoint))
+            zigzagLine := line.new(startPoint, endPoint, xloc.bar_time, extendLines ? extend.right : extend.none, color=color.new(direction > 0 ? bullColor : bearColor, lineTransparency), width=lineThickness)
+            if (direction == direction[1])
+                line.delete(zigzagLine[1])
+            else
+                line.set_extend(zigzagLine[1], extend.none)
+    else
+        if (direction != direction[1])
+            zigzagLine := line.new(startPoint[1], endPoint[1], xloc.bar_time, extend.none, color=color.new(direction > 0 ? bullColor : bearColor, lineTransparency), width=lineThickness)
+
+// ... (โค้ด ZigZag Integration สิ้นสุดที่นี่)
+
+// --- ส่วนที่ 2: Multi-EMA (เพิ่มใหม่) ---
+emaGroup = "Multi-EMA Settings"
+ema1_show = input.bool(true, "Show EMA 1", group=emaGroup)
+ema1_len = input.int(10, "Length EMA 1", minval=1, group=emaGroup)
+ema1_color = input.color(color.blue, "Color EMA 1", group=emaGroup)
+
+ema2_show = input.bool(true, "Show EMA 2", group=emaGroup)
+ema2_len = input.int(20, "Length EMA 2", minval=1, group=emaGroup)
+ema2_color = input.color(color.purple, "Color EMA 2", group=emaGroup)
+
+ema3_show = input.bool(true, "Show EMA 3", group=emaGroup)
+ema3_len = input.int(50, "Length EMA 3", minval=1, group=emaGroup)
+ema3_color = input.color(color.orange, "Color EMA 3", group=emaGroup)
+
+ema4_show = input.bool(false, "Show EMA 4", group=emaGroup)
+ema4_len = input.int(100, "Length EMA 4", minval=1, group=emaGroup)
+ema4_color = input.color(color.yellow, "Color EMA 4", group=emaGroup)
+
+ema5_show = input.bool(false, "Show EMA 5", group=emaGroup)
+ema5_len = input.int(200, "Length EMA 5", minval=1, group=emaGroup)
+ema5_color = input.color(color.red, "Color EMA 5", group=emaGroup)
+
+// Plotting EMAs
+ema1_val = ta.ema(close, ema1_len)
+plot(ema1_show ? ema1_val : na, title="EMA 1", color=ema1_color, linewidth=2)
+
+ema2_val = ta.ema(close, ema2_len)
+plot(ema2_show ? ema2_val : na, title="EMA 2", color=ema2_color, linewidth=2)
+
+ema3_val = ta.ema(close, ema3_len)
+plot(ema3_show ? ema3_val : na, title="EMA 3", color=ema3_color, linewidth=2)
+
+ema4_val = ta.ema(close, ema4_len)
+plot(ema4_show ? ema4_val : na, title="EMA 4", color=ema4_color, linewidth=2)
+
+ema5_val = ta.ema(close, ema5_len)
+plot(ema5_show ? ema5_val : na, title="EMA 5", color=ema5_color, linewidth=2)
+// --- สิ้นสุดส่วน Multi-EMA ---
+
+// --- User Inputs ---
+// rsi_length = input.int(14, minval=1, title="RSI Length") // โค้ดเดิมที่อยู่ถัดไป
+// ...
+
+// --- User Inputs ---
+rsi_length = input.int(14, minval=1, title="RSI Length")
+cci_length = input.int(14, minval=1, title="CCI Length")
+stoch_k_length = input.int(14, minval=1, title="Stochastic %K Length")
+stoch_d_length = input.int(3, minval=1, title="Stochastic %D Smoothing")
+
+// Overbought/Oversold Levels
+rsi_oversold = input.int(30, title="RSI Oversold Level", minval=10, maxval=50)
+rsi_overbought = input.int(70, title="RSI Overbought Level", minval=50, maxval=90)
+cci_oversold = input.int(-100, title="CCI Oversold Level", minval=-150, maxval=-50)
+cci_overbought = input.int(100, title="CCI Overbought Level", minval=50, maxval=150)
+stoch_oversold = input.int(20, title="Stochastic Oversold Level", minval=10, maxval=40)
+stoch_overbought = input.int(80, title="Stochastic Overbought Level", minval=60, maxval=90)
+
+// --- [NEW] UT Bot & Warning Line Settings ---
+// (ไม่จำเป็นต้องประกาศ groupUT ซ้ำ เพราะมีอยู่แล้ว)
+// groupUT = "UT Bot Trailing Stop & Alerts" <-- ลบออก
+ut_a_new = input.float(2.0, title = "UT Bot: Key Value (Sensitivity)", group=groupUT)
+ut_c_new = input.int(10, title = "UT Bot: ATR Period", minval=1, group=groupUT)
+ut_h_new = input.bool(false, title = "UT Bot: Signals from Heikin Ashi Candles", group=groupUT)
+
+// กำหนดชื่อ Group ใหม่ หรือใช้ชื่อ Group เดิม หากคุณลบชื่อ Group เดิมออก
+groupWarn_new = "UT Warning Line Settings" // เปลี่ยนชื่อตัวแปรเป็น groupWarn_new
+// warn_pct_raw และ warn_pct_new ใช้ groupWarn_new แทน
+warn_pct_raw = input.int(15, title = "Warning Distance (%)", minval=1, maxval=100, group=groupWarn_new) 
+warn_pct_new = warn_pct_raw / 100
+// --- [END NEW] ---
+
+// Input Validation
+if rsi_oversold >= rsi_overbought or cci_oversold >= cci_overbought or stoch_oversold >= stoch_overbought
+    runtime.error("Oversold level must be less than Overbought level for all indicators.")
+
+// Signal Type Selection
+signalType = input.string(title="Signal Type", defval="RSI & CCI", options=["RSI & CCI", "RSI & Stochastic", "CCI & Stochastic", "RSI & CCI & Stochastic", "All Signals"])
+
+// --- Indicator Calculations ---
+rsi = ta.rsi(close, rsi_length)
+cci_source = hlc3  // (high + low + close) / 3
+cci = ta.cci(cci_source, length=cci_length)
+stoch_k_basic = ta.stoch(high, low, close, length=stoch_k_length)
+stoch_k = ta.sma(stoch_k_basic, stoch_d_length)
+stoch_d = ta.sma(stoch_k, stoch_d_length)
+
+// --- Signal Conditions ---
+rsi_buy = ta.crossover(rsi, rsi_oversold)
+rsi_sell = ta.crossunder(rsi, rsi_overbought)
+cci_buy = ta.crossover(cci, cci_oversold)
+cci_sell = ta.crossunder(cci, cci_overbought)
+stoch_buy = ta.crossover(stoch_k, stoch_oversold)
+stoch_sell = ta.crossunder(stoch_k, stoch_overbought)
+
+// Combined Signals
+rsi_cci_buy = rsi_buy and cci_buy
+rsi_cci_sell = rsi_sell and cci_sell
+
+rsi_stoch_buy = rsi_buy and stoch_buy
+rsi_stoch_sell = rsi_sell and stoch_sell
+
+cci_stoch_buy = cci_buy and stoch_buy
+cci_stoch_sell = cci_sell and stoch_sell
+
+all_combined_buy = rsi_buy and cci_buy and stoch_buy
+all_combined_sell = rsi_sell and cci_sell and stoch_sell
+
+// Variables to Store Plotting Conditions
+plot_rsi_cci_buy = bool(na)
+plot_rsi_cci_sell = bool(na)
+plot_rsi_stoch_buy = bool(na)
+plot_rsi_stoch_sell = bool(na)
+plot_cci_stoch_buy = bool(na)
+plot_cci_stoch_sell = bool(na)
+plot_all_combined_buy = bool(na)
+plot_all_combined_sell = bool(na)
+
+// Set Plotting Conditions Based on Selected Signal Type
+if signalType == "RSI & CCI"
+    plot_rsi_cci_buy := rsi_cci_buy
+    plot_rsi_cci_sell := rsi_cci_sell
+else if signalType == "RSI & Stochastic"
+    plot_rsi_stoch_buy := rsi_stoch_buy
+    plot_rsi_stoch_sell := rsi_stoch_sell
+else if signalType == "CCI & Stochastic"
+    plot_cci_stoch_buy := cci_stoch_buy
+    plot_cci_stoch_sell := cci_stoch_sell
+else if signalType == "RSI & CCI & Stochastic"
+    plot_all_combined_buy := all_combined_buy
+    plot_all_combined_sell := all_combined_sell
+else if signalType == "All Signals"
+    plot_rsi_cci_buy := rsi_cci_buy
+    plot_rsi_cci_sell := rsi_cci_sell
+    plot_rsi_stoch_buy := rsi_stoch_buy
+    plot_rsi_stoch_sell := rsi_stoch_sell
+    plot_cci_stoch_buy := cci_stoch_buy
+    plot_cci_stoch_sell := cci_stoch_sell
+    plot_all_combined_buy := all_combined_buy
+    plot_all_combined_sell := all_combined_sell
+
+// --- Global Plotting ---
+plotshape(plot_rsi_cci_buy, title="RSI & CCI BUY", location=location.belowbar, color=color.green, style=shape.arrowup, size=size.small, text="RSI&CCI BUY")
+plotshape(plot_rsi_cci_sell, title="RSI & CCI SELL", location=location.abovebar, color=color.red, style=shape.arrowdown, size=size.small, text="RSI&CCI SELL")
+
+plotshape(plot_rsi_stoch_buy, title="RSI & Stoch BUY", location=location.belowbar, color=color.lime, style=shape.arrowup, size=size.small, text="RSI&Stoch BUY")
+plotshape(plot_rsi_stoch_sell, title="RSI & Stoch SELL", location=location.abovebar, color=color.fuchsia, style=shape.arrowdown, size=size.small, text="RSI&Stoch SELL")
+
+plotshape(plot_cci_stoch_buy, title="CCI & Stoch BUY", location=location.belowbar, color=color.yellow, style=shape.arrowup, size=size.small, text="CCI&Stoch BUY")
+plotshape(plot_cci_stoch_sell, title="CCI & Stoch SELL", location=location.abovebar, color=color.gray, style=shape.arrowdown, size=size.small, text="CCI&Stoch SELL")
+
+plotshape(plot_all_combined_buy, title="Combined BUY", location=location.belowbar, color=color.white, style=shape.labelup, size=size.normal, text="ALL BUY")
+plotshape(plot_all_combined_sell, title="Combined SELL", location=location.abovebar, color=color.black, style=shape.labeldown, size=size.normal, text="ALL SELL")
+
+// --- Add Vertical Lines for Buy/Sell Signals ---
+var line[] buy_lines = array.new_line()
+var line[] sell_lines = array.new_line()
+
+// ----------------------------------------
+// --- UT Bot Alerts Logic REPLACED with Warning Line V5 ---
+// ----------------------------------------
+xATR_new = ta.atr(ut_c_new) 
+nLoss_new = ut_a_new * xATR_new 
+
+// Heikin Ashi Source 
+// ใช้ close[1] สำหรับ Heikin Ashi เพื่อป้องกัน Repainting
+src_new = ut_h_new ? request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, close[1], lookahead = barmerge.lookahead_off) : close
+
+// --- UT Trailing Stop Calculation ---
+var float xATRTrailingStop_new = 0.0 
+xATRTrailingStop_new := if src_new > nz(xATRTrailingStop_new[1], 0) and src_new[1] > nz(xATRTrailingStop_new[1], 0)
+    math.max(nz(xATRTrailingStop_new[1]), src_new - nLoss_new)
+else if src_new < nz(xATRTrailingStop_new[1], 0) and src_new[1] < nz(xATRTrailingStop_new[1], 0)
+    math.min(nz(xATRTrailingStop_new[1]), src_new + nLoss_new)
+else if src_new > nz(xATRTrailingStop_new[1], 0)
+    src_new - nLoss_new
+else
+    src_new + nLoss_new
+ 
+// --- Trend Position (pos_new) Calculation ---
+var int pos_new = 0 
+pos_new := if src_new[1] < nz(xATRTrailingStop_new[1], 0) and src_new > nz(xATRTrailingStop_new[1], 0)
+    1 // Long
+else if src_new[1] > nz(xATRTrailingStop_new[1], 0) and src_new < nz(xATRTrailingStop_new[1], 0)
+    -1 // Short
+else 
+    nz(pos_new[1], 0)
+
+// --- [NEW] Warning Line Logic ---
+// คำนวณระยะห่าง
+dist_new = nLoss_new * warn_pct_new
+// สร้างระดับราคาสำหรับเตือน
+warn_level_buy_new = xATRTrailingStop_new - dist_new 
+warn_level_sell_new = xATRTrailingStop_new + dist_new 
+
+// Logic การเตือน: (เป็นขาลงอยู่ + ราคาทะลุเส้นประขึ้นมา + แต่ยังไม่ทะลุเส้นจริง)
+ready_buy_new = (pos_new == -1) and (close > warn_level_buy_new) and (close < xATRTrailingStop_new)
+// Logic การเตือน: (เป็นขาขึ้นอยู่ + ราคาร่วงทะลุเส้นประลงมา + แต่ยังไม่หลุดเส้นจริง)
+ready_sell_new = (pos_new == 1) and (close < warn_level_sell_new) and (close > xATRTrailingStop_new)
+
+// สัญญาณ Buy/Sell หลัก
+ut_buy_new = src_new > xATRTrailingStop_new and src_new[1] <= nz(xATRTrailingStop_new[1])
+ut_sell_new = src_new < xATRTrailingStop_new and src_new[1] >= nz(xATRTrailingStop_new[1])
+
+// --- [END REPLACEMENT] ---
+// --- UT Bot Signal Plots (Secondary) ---
+ut_xcolor_new = pos_new == -1 ? color.red : pos_new == 1 ? color.green : color.gray // เพิ่มการกำหนดสีตามสถานะ pos_new
+plot(showUTTrailingStop ? xATRTrailingStop_new : na, title = "UT Trailing Stop", color = ut_xcolor_new, linewidth = 2) // ใช้ตัวแปรใหม่
+
+plotshape(ut_buy_new and showUTSignals, title = "UT Buy", text = 'UT Buy', style = shape.labelup, location = location.belowbar, color= color.new(color.blue, 0), textcolor = color.white, transp = 0, size = size.tiny)
+plotshape(ut_sell_new and showUTSignals, title = "UT Sell", text = 'UT Sell', style = shape.labeldown, location = location.abovebar, color= color.new(color.orange, 0), textcolor = color.white, transp = 0, size = size.tiny)
+
+// --- [NEW] Warning Line Plots ---
+// Plot สัญญาณ Ready
+plotshape(ready_buy_new, title = "UT Ready Buy", text = "Ready", style = shape.triangleup, location = location.belowbar, color= color.new(color.orange, 0), textcolor = color.white, size = size.tiny)
+plotshape(ready_sell_new, title = "UT Ready Sell", text = "Ready", style = shape.triangledown, location = location.abovebar, color= color.new(color.orange, 0), textcolor = color.white, size = size.tiny)
+
+// Plot เส้นประเตือนภัย (Pre-Warning Lines)
+plot(pos_new == -1 ? warn_level_buy_new : na, color=color.new(color.orange, 30), style=plot.style_circles, title="Pre-Buy Line")
+plot(pos_new == 1 ? warn_level_sell_new : na, color=color.new(color.orange, 30), style=plot.style_circles, title="Pre-Sell Line")
+// --- [END NEW] ---
+
+// --- UT Bot Alert Conditions (Secondary) ---
+alertcondition(ut_buy_new, "UT Bot Long Signal", "UT Bot Buy Alert!") // ใช้ตัวแปรใหม่
+alertcondition(ut_sell_new, "UT Bot Short Signal", "UT Bot Sell Alert!") // ใช้ตัวแปรใหม่
+
+// **โค้ด Vertical Lines (var line[] buy_lines = ...) จะวางต่อจากบรรทัดนี้**
+
+// --- [NEW] Warning Line Alerts ---
+alertcondition(ready_buy_new, "UT Ready Long", "Price crossed Warning Line (Prepare Long)")
+alertcondition(ready_sell_new, "UT Ready Short", "Price crossed Warning Line (Prepare Short)")
+// --- [END NEW] ---
+
+// Calculate ATR for offset
+atr_value = ta.atr(14)
+
+if plot_rsi_cci_buy or plot_rsi_stoch_buy or plot_cci_stoch_buy or plot_all_combined_buy
+    label.new(bar_index, low - atr_value, text="BUY", style=label.style_label_up, color=color.green, textcolor=color.white)
+    line.new(bar_index, low - atr_value, bar_index, high + atr_value, color=color.green, width=2)
+    array.push(buy_lines, line.new(bar_index, low - atr_value, bar_index, high + atr_value, color=color.green, width=2))
+
+if plot_rsi_cci_sell or plot_rsi_stoch_sell or plot_cci_stoch_sell or plot_all_combined_sell
+    label.new(bar_index, high + atr_value, text="SELL", style=label.style_label_down, color=color.red, textcolor=color.white)
+    line.new(bar_index, high + atr_value, bar_index, low - atr_value, color=color.red, width=2)
+    array.push(sell_lines, line.new(bar_index, high + atr_value, bar_index, low - atr_value, color=color.red, width=2))
+
+// Limit the number of lines to avoid clutter
+if array.size(buy_lines) > 50
+    line.delete(array.shift(buy_lines))
+if array.size(sell_lines) > 50
+    line.delete(array.shift(sell_lines))
+
+// Inputs (ต้องเพิ่มส่วนที่ขาดไปของ Orderblocks ตรงนี้)
+swingLength = input.int(5, "Swing Detection Length", minval=1, maxval=50, tooltip="Number of candles for swing high/low detection")
+showOnlyRecent = input.bool(true, "Show Only Recent Orderblocks")
+recentCount = input.int(10, "Number of Recent Orderblocks", minval=1, maxval=50)
+showOrderblocks = input.bool(true, "Show Orderblocks")
+showBreakers = input.bool(true, "Show Breakers")
+chopControl = input.bool(true, "Chop Control", tooltip="Remove breakers that get closed through multiple times")
+
+// Colors
+bullishOBColor = input.color(color.new(color.aqua, 80), "Bullish OB Color")
+bearishOBColor = input.color(color.new(color.red, 80), "Bearish OB Color")
+bullishBreakerColor = input.color(color.new(color.blue, 80), "Bullish Breaker Color (OB broken upward)")
+bearishBreakerColor = input.color(color.new(color.maroon, 80), "Bearish Breaker Color (OB broken downward)")
+
+bullishOBBorderColor = input.color(color.aqua, "Bullish OB Border Color")
+bearishOBBorderColor = input.color(color.red, "Bearish OB Border Color")
+bullishBreakerBorderColor = input.color(color.blue, "Bullish Breaker Border Color")
+bearishBreakerBorderColor = input.color(color.maroon, "Bearish Breaker Border Color")
+
+// Swing High/Low Detection
+isSwingHigh = ta.pivothigh(high, swingLength, swingLength)
+isSwingLow = ta.pivotlow(low, swingLength, swingLength)
+
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var int lastSwingHighBar = na
+var int lastSwingLowBar = na
+var bool swingHighBreached = false
+var bool swingLowBreached = false
+
+if not na(isSwingHigh)
+    lastSwingHigh := isSwingHigh
+    lastSwingHighBar := bar_index - swingLength
+    swingHighBreached := false
+
+if not na(isSwingLow)
+    lastSwingLow := isSwingLow
+    lastSwingLowBar := bar_index - swingLength
+    swingLowBreached := false
+
+// Orderblocks
+type Orderblock
+    box boxObj
+    float top
+    float bottom
+    int startBar
+    bool isBullish
+    bool isBreaker
+    bool wasOriginallyBullish
+
+type PendingOB
+    float level
+    int obBar
+    float obTop
+    float obBottom
+    bool isBullish
+    int breachBar
+
+var array<Orderblock> orderblocks = array.new<Orderblock>()
+var array<PendingOB> pendingOBs = array.new<PendingOB>()
+
+// Swing High/Low Breach
+highBreached = not na(lastSwingHigh) and not swingHighBreached and high > lastSwingHigh
+lowBreached = not na(lastSwingLow) and not swingLowBreached and low < lastSwingLow
+
+if highBreached
+    swingHighBreached := true
+
+if lowBreached
+    swingLowBreached := true
+
+// Store last bear candle
+if highBreached
+    // Check for pending OB
+    alreadyPending = false
+    if array.size(pendingOBs) > 0
+        for j = 0 to array.size(pendingOBs) - 1
+            existingPending = array.get(pendingOBs, j)
+            if existingPending.isBullish and math.abs(existingPending.level - lastSwingHigh) < 0.0001
+                alreadyPending := true
+                break
+    
+    if not alreadyPending
+        for i = 1 to 50
+            if bar_index - i <= lastSwingHighBar
+                break
+            if close[i] < open[i]
+                pending = PendingOB.new(
+                     level = lastSwingHigh,
+                     obBar = bar_index - i,
+                     obTop = high[i],
+                     obBottom = low[i],
+                     isBullish = true,
+                     breachBar = bar_index
+                 )
+                array.push(pendingOBs, pending)
+                break
+
+// Store last bull candle
+if lowBreached
+    // Check for pending OB
+    alreadyPending = false
+    if array.size(pendingOBs) > 0
+        for j = 0 to array.size(pendingOBs) - 1
+            existingPending = array.get(pendingOBs, j)
+            if not existingPending.isBullish and math.abs(existingPending.level - lastSwingLow) < 0.0001
+                alreadyPending := true
+                break
+    
+    if not alreadyPending
+        for i = 1 to 50
+            if bar_index - i <= lastSwingLowBar
+                break
+            if close[i] > open[i]
+                pending = PendingOB.new(
+                     level = lastSwingLow,
+                     obBar = bar_index - i,
+                     obTop = high[i],
+                     obBottom = low[i],
+                     isBullish = false,
+                     breachBar = bar_index
+                 )
+                array.push(pendingOBs, pending)
+                break
+
+// Check pending OBs for close confirmation
+bullishMSB = not na(lastSwingHigh) and close > lastSwingHigh and close[1] <= lastSwingHigh
+bearishMSB = not na(lastSwingLow) and close < lastSwingLow and close[1] >= lastSwingLow
+
+if array.size(pendingOBs) > 0
+    for i = array.size(pendingOBs) - 1 to 0
+        pending = array.get(pendingOBs, i)
+        
+        // Bullish OB confirmed
+        if pending.isBullish and bullishMSB and math.abs(pending.level - lastSwingHigh) < 0.0001
+            newBox = box.new(
+                 left = pending.obBar,
+                 top = pending.obTop,
+                 right = bar_index + 50,
+                 bottom = pending.obBottom,
+                 border_color = bullishOBBorderColor,
+                 bgcolor = bullishOBColor,
+                 border_width = 1,
+                 extend = extend.right
+             )
+            
+            ob = Orderblock.new(newBox, pending.obTop, pending.obBottom, pending.obBar, true, false, true)
+            array.push(orderblocks, ob)
+            array.remove(pendingOBs, i)
+        
+        // Bearish OB confirmed
+        else if not pending.isBullish and bearishMSB and math.abs(pending.level - lastSwingLow) < 0.0001
+            newBox = box.new(
+                 left = pending.obBar,
+                 top = pending.obTop,
+                 right = bar_index + 50,
+                 bottom = pending.obBottom,
+                 border_color = bearishOBBorderColor,
+                 bgcolor = bearishOBColor,
+                 border_width = 1,
+                 extend = extend.right
+             )
+            
+            ob = Orderblock.new(newBox, pending.obTop, pending.obBottom, pending.obBar, false, false, false)
+            array.push(orderblocks, ob)
+            array.remove(pendingOBs, i)
+
+// Breakers
+if array.size(orderblocks) > 0
+    for i = array.size(orderblocks) - 1 to 0
+        ob = array.get(orderblocks, i)
+        
+        if not ob.isBreaker
+            // Bearish Breaker
+            if ob.isBullish and close < ob.bottom
+                ob.isBreaker := true
+                box.set_bgcolor(ob.boxObj, bearishBreakerColor)
+                box.set_border_color(ob.boxObj, bearishBreakerBorderColor)
+                array.set(orderblocks, i, ob)
+            
+            // Bullish Breaker
+            if not ob.isBullish and close > ob.top
+                ob.isBreaker := true
+                box.set_bgcolor(ob.boxObj, bullishBreakerColor)
+                box.set_border_color(ob.boxObj, bullishBreakerBorderColor)
+                array.set(orderblocks, i, ob)
+        
+        // Chop Control
+        else if chopControl and ob.isBreaker
+            shouldRemove = false
+            
+            if ob.wasOriginallyBullish
+                if close > ob.top
+                    shouldRemove := true
+
+            else
+                if close < ob.bottom
+                    shouldRemove := true
+            
+            if shouldRemove
+                box.delete(ob.boxObj)
+                array.remove(orderblocks, i)
+
+// Display
+if array.size(orderblocks) > 0
+    visibleCount = 0
+    
+    for i = array.size(orderblocks) - 1 to 0
+        ob = array.get(orderblocks, i)
+        
+        shouldShow = true
+        
+        // Hide orderblocks option
+        if not showOrderblocks and not ob.isBreaker
+            shouldShow := false
+        
+        // Hide breakers option
+        if not showBreakers and ob.isBreaker
+            shouldShow := false
+        
+        // Show Only Recent
+        if showOnlyRecent and visibleCount >= recentCount
+            shouldShow := false
+        
+        // Box visibility
+        if shouldShow
+            box.set_bgcolor(ob.boxObj, ob.isBreaker ? (ob.wasOriginallyBullish ? bearishBreakerColor : bullishBreakerColor) : (ob.isBullish ? bullishOBColor : bearishOBColor))
+            box.set_border_color(ob.boxObj, ob.isBreaker ? (ob.wasOriginallyBullish ? bearishBreakerBorderColor : bullishBreakerBorderColor) : (ob.isBullish ? bullishOBBorderColor : bearishOBBorderColor))
+            box.set_right(ob.boxObj, bar_index + 50)
+            visibleCount += 1
+        else
+            box.set_bgcolor(ob.boxObj, color.new(color.gray, 100))
+            box.set_border_color(ob.boxObj, color.new(color.gray, 100))
+
+// Alerts
+var bool atOrderblock = false
+var bool atBreaker = false
+
+atOrderblock := false
+atBreaker := false
+
+if array.size(orderblocks) > 0
+    for i = 0 to array.size(orderblocks) - 1
+        ob = array.get(orderblocks, i)
+        
+        if low <= ob.top and high >= ob.bottom
+            if ob.isBreaker
+                atBreaker := true
+            else
+                atOrderblock := true
+
+alertcondition(atOrderblock, title="Price at Orderblock", message="Price is touching an Orderblock zone")
+alertcondition(atBreaker, title="Price at Breaker", message="Price is touching a Breaker zone")
+alertcondition(atOrderblock or atBreaker, title="Price at Orderblock or Breaker", message="Price is touching an Orderblock or Breaker zone")
+
+// End of script.

@@ -1,0 +1,221 @@
+//@version=5
+indicator("Pin Bar Fib Pullback + Engulfing + Pin Reversal (21 EMA + VWAP)", overlay = true, max_bars_back = 500)
+
+//----------------------
+// Inputs
+//----------------------
+emaLen       = input.int(21, "Trend EMA length", minval = 1)
+swingLen     = input.int(3,  "Swing pivot length", minval = 1)
+pinTailMult  = input.float(2.0, "Pin tail >= body *",  minval = 1.0)
+pinVsUpper   = input.float(2.0, "Pin main tail >= other wick *", minval = 1.0)
+bodyMaxFrac  = input.float(0.4, "Pin body <= % of full bar",     minval = 0.1, maxval = 0.8)
+topCloseFrac = input.float(0.33, "Close near extreme (for pin)", minval = 0.1, maxval = 0.6)
+
+showVWAP     = input.bool(true, "Show VWAP")
+
+// Big move filter inputs
+grpBigMove       = "Big Move Filter"
+useBigMoveFilter = input.bool(true, "Mark 'big move' signals?", group = grpBigMove)
+atrLen           = input.int(14, "ATR length", minval = 1, group = grpBigMove)
+atrMult          = input.float(1.5, "Big move = next bar moves ATR *", minval = 0.1, step = 0.1, group = grpBigMove)
+
+//----------------------
+// Trend filters (21 EMA)
+//----------------------
+ema       = ta.ema(close, emaLen)
+trendUp   = close > ema and ema > ema[1]
+trendDown = close < ema and ema < ema[1]
+
+//----------------------
+// Swing HL / HH pivots (for fib continuation setup)
+//----------------------
+ph = ta.pivothigh(high, swingLen, swingLen)
+pl = ta.pivotlow(low,  swingLen, swingLen)
+
+var float swingLow   = na
+var float swingHigh  = na
+var float fib50      = na
+var float fib618     = na
+var float swingRange = na
+
+if not na(pl)
+    swingLow := pl
+
+if not na(ph) and not na(swingLow) and ph > swingLow
+    swingHigh := ph
+
+if not na(swingHigh) and not na(swingLow) and swingHigh > swingLow
+    swingRange := swingHigh - swingLow
+    fib50      := swingLow + swingRange * 0.50
+    fib618     := swingLow + swingRange * 0.618
+
+zoneHigh = fib50
+zoneLow  = fib618
+inZone   = not na(zoneHigh) and not na(zoneLow) and low <= zoneHigh and low >= zoneLow
+
+//----------------------
+// Basic candle anatomy
+//----------------------
+body      = math.abs(close - open)
+fullRange = high - low
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+
+validBar = fullRange > 0 and body > 0
+
+//----------------------
+// 1) Bullish Pin Bar (continuation in fib zone)
+//----------------------
+bullPinCont = validBar and close > open and
+     body / fullRange <= bodyMaxFrac and
+     lowerWick >= body * pinTailMult and
+     lowerWick >= upperWick * pinVsUpper and
+     (high - close) <= fullRange * topCloseFrac
+
+// Pin-bar BUY: trend up + in fib zone + pin
+pinBuy = trendUp and inZone and bullPinCont
+
+//----------------------
+// 2) Engulfing patterns
+//----------------------
+bodyCurr = body
+bodyPrev = math.abs(close[1] - open[1])
+
+bullishEngulf = close[1] < open[1] and
+     close > open and
+     bodyCurr > bodyPrev and
+     open <= close[1] and
+     close >= open[1]
+
+bearishEngulf = close[1] > open[1] and
+     close < open and
+     bodyCurr > bodyPrev and
+     open >= close[1] and
+     close <= open[1]
+
+//----------------------
+// 3) Pin Bar Reversal patterns
+//----------------------
+// Bullish Pin Bar Reversal (bottom)
+bullishPinRev = validBar and close > open and
+     body / fullRange <= bodyMaxFrac and
+     lowerWick >= body * pinTailMult and
+     lowerWick >= upperWick * pinVsUpper and
+     (high - close) <= fullRange * topCloseFrac
+
+bullishPinReversalSignal = trendDown and bullishPinRev
+
+// Bearish Pin Bar Reversal (top)
+bearishPinRev = validBar and close < open and
+     body / fullRange <= bodyMaxFrac and
+     upperWick >= body * pinTailMult and
+     upperWick >= lowerWick * pinVsUpper and
+     (close - low) <= fullRange * topCloseFrac
+
+bearishPinReversalSignal = trendUp and bearishPinRev
+
+//----------------------
+// VWAP
+//----------------------
+vwap = ta.vwap(hlc3)
+
+//----------------------
+// ATR for "big move" logic
+//----------------------
+atr = ta.atr(atrLen)
+
+// Combine into directional signals
+longSignal  = pinBuy or bullishEngulf or bullishPinReversalSignal
+shortSignal = bearishEngulf or bearishPinReversalSignal
+
+// "Big move" definition:
+// A signal is tagged as a BIG MOVE if, on the *next bar*,
+// price moves at least (atrMult * ATR) in the signal direction
+// away from the signal close.
+bigLongNow  = useBigMoveFilter and longSignal[1]  and high >= close[1] + atrMult * atr[1]
+bigShortNow = useBigMoveFilter and shortSignal[1] and low  <= close[1] - atrMult * atr[1]
+
+//----------------------
+// Plotting
+//----------------------
+plot(ema, "EMA 21", color = color.orange)
+plot(showVWAP ? vwap : na, "VWAP", color = color.new(color.blue, 0), linewidth = 2)
+
+// Fib continuation zone
+p50 = plot(fib50,  "Fib 0.50",  color = color.new(color.green, 0))
+p61 = plot(fib618, "Fib 0.618", color = color.new(color.green, 70))
+fill(p50, p61, color = color.new(color.green, 85))
+
+// Pin bar continuation buy marker
+plotshape(
+     pinBuy,
+     title     = "Pin Bar Continuation Buy",
+     style     = shape.triangleup,
+     location  = location.belowbar,
+     color     = color.lime,
+     size      = size.small,
+     text      = "PIN CONT")
+
+// Bullish engulfing
+plotshape(
+     bullishEngulf,
+     title     = "Bullish Engulfing",
+     style     = shape.triangleup,
+     location  = location.belowbar,
+     color     = color.new(color.blue, 0),
+     size      = size.tiny,
+     text      = "B ENG")
+
+// Bearish engulfing
+plotshape(
+     bearishEngulf,
+     title     = "Bearish Engulfing",
+     style     = shape.triangledown,
+     location  = location.abovebar,
+     color     = color.new(color.red, 0),
+     size      = size.tiny,
+     text      = "S ENG")
+
+// Bullish Pin Bar Reversal
+plotshape(
+     bullishPinReversalSignal,
+     title     = "Bullish Pin Reversal",
+     style     = shape.triangleup,
+     location  = location.belowbar,
+     color     = color.new(color.teal, 0),
+     size      = size.small,
+     text      = "PIN REV B")
+
+// Bearish Pin Bar Reversal
+plotshape(
+     bearishPinReversalSignal,
+     title     = "Bearish Pin Reversal",
+     style     = shape.triangledown,
+     location  = location.abovebar,
+     color     = color.new(color.fuchsia, 0),
+     size      = size.small,
+     text      = "PIN REV S")
+
+//----------------------
+// Big move markers
+// (drawn back on the signal bar using offset = -1)
+//----------------------
+plotshape(
+     bigLongNow,
+     title     = "Big Move Long (next bar >= ATR * mult)",
+     style     = shape.circle,
+     location  = location.belowbar,
+     offset    = -1,
+     color     = color.new(color.lime, 0),
+     size      = size.large,
+     text      = "BIG ▲")
+
+plotshape(
+     bigShortNow,
+     title     = "Big Move Short (next bar >= ATR * mult)",
+     style     = shape.circle,
+     location  = location.abovebar,
+     offset    = -1,
+     color     = color.new(color.red, 0),
+     size      = size.large,
+     text      = "BIG ▼")

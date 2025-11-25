@@ -1,0 +1,119 @@
+//@version=6
+indicator("IC Opposite Candle Zones – BOXES", overlay = true)
+
+//––––– Inputs –––––//
+atrLen        = input.int(14, "ATR Length")
+atrMult       = input.float(1.5, "ATR Multiplier")
+bodyMinPct    = input.float(0.6, "Min Body % of Candle")
+bosLookback   = input.int(3, "Structure Lookback")
+maxSearchBack = input.int(10, "Search Back Candles")
+
+//––––– Calculations –––––//
+rng     = high - low
+body    = math.abs(close - open)
+bodyPct = rng > 0 ? body / rng : 0
+
+atrVal = ta.atr(atrLen)
+
+prevHigh = ta.highest(high[1], bosLookback)
+prevLow  = ta.lowest(low[1], bosLookback)
+
+// Institutional candles
+bullInst = close > open and rng > atrMult * atrVal and bodyPct > bodyMinPct and high > prevHigh
+bearInst = close < open and rng > atrMult * atrVal and bodyPct > bodyMinPct and low  < prevLow
+
+//––––– Storage for box references –––––//
+var box bullBox = na
+var box bearBox = na
+
+//––––– Zones –––––//
+var float bullZoneHigh = na
+var float bullZoneLow  = na
+
+var float bearZoneHigh = na
+var float bearZoneLow  = na
+
+//––––– Bullish IC: Find last bearish candle before it –––––//
+if bullInst
+    float lastBearHigh = na
+    float lastBearLow  = na
+
+    for i = 1 to maxSearchBack
+        if close[i] < open[i]
+            lastBearHigh := high[i]
+            lastBearLow  := low[i]
+            break
+
+    bullZoneHigh := lastBearHigh
+    bullZoneLow  := lastBearLow
+
+    if not na(bullBox)
+        box.delete(bullBox)
+
+    bullBox := box.new(
+         left   = bar_index,
+         right  = bar_index + 50,
+         top    = bullZoneHigh,
+         bottom = bullZoneLow,
+         bgcolor = color.new(color.lime, 85),
+         border_color = color.lime,
+         border_width = 1
+     )
+
+//––––– Bearish IC: Find last bullish candle before it –––––//
+if bearInst
+    float lastBullHigh = na
+    float lastBullLow  = na
+
+    for i = 1 to maxSearchBack
+        if close[i] > open[i]
+            lastBullHigh := high[i]
+            lastBullLow  := low[i]
+            break
+
+    bearZoneHigh := lastBullHigh
+    bearZoneLow  := lastBullLow
+
+    if not na(bearBox)
+        box.delete(bearBox)
+
+    bearBox := box.new(
+         left   = bar_index,
+         right  = bar_index + 50,
+         top    = bearZoneHigh,
+         bottom = bearZoneLow,
+         bgcolor = color.new(color.red, 85),
+         border_color = color.red,
+         border_width = 1
+     )
+
+//––––– Mark IC candles –––––//
+plotshape(bullInst, location = location.belowbar, style = shape.triangleup, color = color.lime, size = size.tiny, text = "IC")
+plotshape(bearInst, location = location.abovebar, style = shape.triangledown, color = color.red, size = size.tiny, text = "IC")
+//@version=6
+indicator("Reversal Bar", overlay=true)
+
+// ------ 輸入設定：Reversal Patterns Group ------
+group_rev = "Reversal Patterns"
+use_reversals = input.bool(true, "Use Reversal Bars", group=group_rev)
+bear_rev_color = input.color(color.rgb(255, 0, 0), "Bear Rev ▲", group=group_rev)
+bull_rev_color = input.color(color.rgb(0, 202, 7), "Bull Rev ▼", group=group_rev)
+
+// ------ 變量計算：Bar 屬性 ------
+range_val = high - low
+close_pos_pct = range_val > 0 ? (close - low) / range_val * 100 : 50
+upper_tail = high - math.max(open, close)
+lower_tail = math.min(open, close) - low
+upper_tail_pct = range_val > 0 ? upper_tail / range_val * 100 : 0
+lower_tail_pct = range_val > 0 ? lower_tail / range_val * 100 : 0
+overlap_with_prior = math.max(0, math.min(high, high[1]) - math.max(low, low[1]))
+prior_range_val = high[1] - low[1]
+is_in_range = prior_range_val > 0 and overlap_with_prior / prior_range_val > 0.5
+
+// ------ 邏輯處理：Reversal Bars ------
+bool potential_bull = use_reversals and close > open and close_pos_pct > 50 and upper_tail_pct <= 30 and lower_tail_pct >= 30 and low < low[1] and not is_in_range
+bool potential_bear = use_reversals and close < open and close_pos_pct < 50 and lower_tail_pct <= 30 and upper_tail_pct >= 30 and high > high[1] and not is_in_range
+
+// ------ 輸出繪製 ------
+plotshape(potential_bull, style=shape.triangleup, location=location.belowbar, color=bull_rev_color, size=size.small, title="Bull Rev")
+plotshape(potential_bear, style=shape.triangledown, location=location.abovebar, color=bear_rev_color, size=size.small, title="Bear Rev")

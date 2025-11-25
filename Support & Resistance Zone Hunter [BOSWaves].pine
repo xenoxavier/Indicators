@@ -1,0 +1,178 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © BOSWaves
+
+//@version=6
+indicator("Support & Resistance Zone Hunter [BOSWaves]", shorttitle="S/R Zone Hunter [BOSWaves]", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+
+// ============================================================================
+// Inputs
+// ============================================================================
+
+lookback = input.int(20, "Pivot Lookback", minval=5, maxval=100, group="Settings", tooltip="Number of bars to the left and right to identify pivot highs and lows")
+minRangePercent = input.float(1.0, "Minimum Range %", minval=0.5, maxval=5.0, step=0.1, group="Settings", tooltip="Minimum distance between support and resistance as a percentage to avoid drawing zones that are too tight")
+volumeFilter = input.bool(true, "Require High Volume", group="Settings", tooltip="Only draw support/resistance zones when volume is above the 50-period average")
+
+showDiamonds = input.bool(true, "Show Breakout Diamonds", group="Breakout Signals", tooltip="Display diamond symbols when price breaks above resistance or below support")
+diamondCooloff = input.int(10, "Diamond Cooloff Period", minval=1, maxval=50, group="Breakout Signals", tooltip="Minimum number of candles required between consecutive breakout signals to avoid signal spam")
+
+bullishColor = input.color(color.new(#089981, 98), "Bullish Zone", group="Style", inline="colors", tooltip="Color for zones where price touched resistance first (bullish bias)")
+bearishColor = input.color(color.new(#f23645, 98), "Bearish Zone", group="Style", inline="colors", tooltip="Color for zones where price touched support first (bearish bias)")
+neutralColor = input.color(color.new(#787b86, 98), "Neutral Zone", group="Style", inline="colors", tooltip="Color for zones before price has touched either level")
+lineColor = input.color(#787b86, "Lines", group="Style", tooltip="Color for support, resistance, and midline")
+diamondBullColor = input.color(#089981, "Bull Diamond", group="Style", inline="diamonds", tooltip="Color for bullish breakout signals")
+diamondBearColor = input.color(#f23645, "Bear Diamond", group="Style", inline="diamonds", tooltip="Color for bearish breakout signals")
+
+// ============================================================================
+// Calculations
+// ============================================================================
+
+avgVolume = ta.sma(volume, 50)
+highVolume = volume > avgVolume  // Check if current volume exceeds 50-bar average
+
+// ============================================================================
+// Pivot Detection
+// ============================================================================
+
+pivotHigh = ta.pivothigh(high, lookback, lookback)
+pivotLow = ta.pivotlow(low, lookback, lookback)
+
+// ============================================================================
+// State Variables
+// ============================================================================
+
+var float topLevel = na
+var float botLevel = na
+var int boxStartBar = na
+var bool activeBox = false
+var bool touchedTop = false
+var bool touchedBot = false
+var color currentBoxColor = na
+var string breakDirection = na
+var int lastBreakoutBar = na
+var bool priceReturnedToBox = true
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+shouldDrawBox(float top, float bot) =>
+    rangePercent = ((top - bot) / bot) * 100  // Calculate zone height as percentage
+    validRange = rangePercent >= minRangePercent  // Check if zone meets minimum range requirement
+    validVolume = not volumeFilter or highVolume  // Pass if volume filter disabled or volume is high
+    validRange and validVolume  // Both conditions must be true
+
+// ============================================================================
+// Box Creation Logic
+// ============================================================================
+
+if not na(pivotHigh)
+    topLevel := pivotHigh
+    activeBox := false
+    touchedTop := false
+    touchedBot := false
+    breakDirection := na
+    currentBoxColor := neutralColor
+    priceReturnedToBox := true
+    lastBreakoutBar := na
+    
+    // Create new S/R zone if both levels exist and meet criteria
+    if not na(botLevel) and shouldDrawBox(topLevel, botLevel)
+        boxStartBar := bar_index - lookback  // Start box at pivot formation
+        activeBox := true
+
+if not na(pivotLow)
+    botLevel := pivotLow
+    activeBox := false
+    touchedTop := false
+    touchedBot := false
+    breakDirection := na
+    currentBoxColor := neutralColor
+    priceReturnedToBox := true
+    lastBreakoutBar := na
+    
+    // Create new S/R zone if both levels exist and meet criteria
+    if not na(topLevel) and shouldDrawBox(topLevel, botLevel)
+        boxStartBar := bar_index - lookback  // Start box at pivot formation
+        activeBox := true
+
+// ============================================================================
+// Price Interaction with Support/Resistance
+// ============================================================================
+
+if activeBox and not na(topLevel) and not na(botLevel)
+    // Track which level price touches first to determine zone bias
+    if high >= topLevel and not touchedBot
+        touchedTop := true
+        if na(breakDirection)
+            breakDirection := "up"
+            currentBoxColor := bullishColor  // Price tested resistance first = bullish bias
+    
+    if low <= botLevel and not touchedTop
+        touchedBot := true
+        if na(breakDirection)
+            breakDirection := "down"
+            currentBoxColor := bearishColor  // Price tested support first = bearish bias
+    
+    // Deactivate zone once both levels have been touched
+    if touchedTop and touchedBot
+        activeBox := false
+
+// ============================================================================
+// Visual Rendering
+// ============================================================================
+
+var line topLine = na
+var line midLine = na
+var line botLine = na
+
+if activeBox and not na(topLevel) and not na(botLevel)
+    mid = (topLevel + botLevel) / 2  // Calculate midpoint for reference line
+    
+    // Draw filled S/R zone with current bias color
+    box.new(boxStartBar, topLevel, bar_index, botLevel, bgcolor=currentBoxColor, border_width=0)
+    
+    // Draw or update support, resistance, and midpoint lines
+    if na(topLine)
+        topLine := line.new(boxStartBar, topLevel, bar_index, topLevel, color=lineColor, width=1)
+        midLine := line.new(boxStartBar, mid, bar_index, mid, color=lineColor, width=1, style=line.style_dashed)
+        botLine := line.new(boxStartBar, botLevel, bar_index, botLevel, color=lineColor, width=1)
+    else
+        line.set_x2(topLine, bar_index)  // Extend lines to current bar
+        line.set_x2(midLine, bar_index)
+        line.set_x2(botLine, bar_index)
+else if not activeBox and not na(topLine)
+    // Clear lines when zone becomes inactive
+    topLine := na
+    midLine := na
+    botLine := na
+
+// ============================================================================
+// Breakout Signals
+// ============================================================================
+
+bullishBreakout = false
+bearishBreakout = false
+
+if activeBox and not na(topLevel) and not na(botLevel)
+    // Track if price has returned to the S/R zone after previous breakout
+    if close >= botLevel and close <= topLevel
+        priceReturnedToBox := true
+    
+    // Check cooloff period to prevent signal spam
+    canSignalBreakout = na(lastBreakoutBar) or (priceReturnedToBox and (bar_index - lastBreakoutBar) >= diamondCooloff)
+    
+    // Bullish breakout: close above resistance with valid cooloff
+    if close > topLevel and canSignalBreakout
+        bullishBreakout := showDiamonds
+        lastBreakoutBar := bar_index
+        priceReturnedToBox := false
+    
+    // Bearish breakout: close below support with valid cooloff
+    if close < botLevel and canSignalBreakout
+        bearishBreakout := showDiamonds
+        lastBreakoutBar := bar_index
+        priceReturnedToBox := false
+
+// Plot diamond symbols for breakouts
+plotchar(bullishBreakout, char="◈", location=location.belowbar, color=diamondBullColor, size=size.small, title="Bullish Breakout")
+plotchar(bearishBreakout, char="◈", location=location.abovebar, color=diamondBearColor, size=size.small, title="Bearish Breakout")

@@ -1,0 +1,483 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// // This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//
+// Original open-source indicators by BigBeluga:
+// - "Volumatic Variable Index Dynamic Average [BigBeluga]"
+// - "Volumatic Support/Resistance Levels [BigBeluga]"
+// Reused under the Mozilla Public License 2.0.
+//
+// Combined and extended by Joka:
+// - merged Volumatic trend and support/resistance logic into one tool
+// - added a custom liquidation levels module
+// - adjusted inputs and visuals for intraday trading
+
+
+
+//@version=5
+indicator('JokaBAR', overlay = true, max_lines_count = 500)
+
+
+
+
+
+///// Liquidations 
+
+//// Inputs 
+
+bool after_time         = true // input.time(timestamp("2023-01-01")) < time
+
+// Main Settings 
+string g_ms             = "Liquidations | Main Settings"
+int timePeriodMean      = 40 // input.int(40, "Lookback Period", group=g_ms)
+float prc_from_price    = input.float(15, "% from price", 0.1, group=g_ms) / 100.
+float days              = input.int(7, "Max age, days", group = g_ms)
+
+// Show Leverage 
+g_slev           = "Show Leverage"
+bool _5          = true // input.bool(true, 'Show 5x Leverage', group=g_slev)
+bool _10         = true // input.bool(true, 'Show 10x Leverage', group=g_slev)
+bool _25         = true // input.bool(true, 'Show 25x Leverage', group=g_slev)
+bool _50         = true // input.bool(true, 'Show 50x Leverage', group=g_slev)
+bool _100        = true // input.bool(true, 'Show 100x Leverage', group=g_slev)
+
+// Visual 
+string g_v          = "Liquidations | Visuals"
+int lines_width     = input.int(1, 'Liquidation Levels width', group = g_v)
+color col_up        = input.color(#22ab94, "Short Liquidations Color", group = g_v)
+color col_dn        = input.color(#f7525f, "Long Liquidations Color",  group = g_v)
+
+
+// Visual | Transparency
+string g_v_t        = "Visual | Transparency"
+int x5_transp       = 0 // input.int(90, "5x ", group=g_v_t)
+int x10_transp      = 0 // input.int(80, "10x ", group=g_v_t)
+int x25_transp      = 0 // input.int(70, "25x ", group=g_v_t)
+int x50_transp      = 0 // input.int(60, "50x ", group=g_v_t)
+int x100_transp     = 0 // input.int(50, "100x ", group=g_v_t)
+
+
+
+
+//// Functions 
+
+// Pivot Points 
+// @Used to spot price reversal, potential places for stop losses
+pivotLeft  = timeframe.isdwm ? 2 : 3
+pivotRight = timeframe.isdwm ? 2 : 3
+
+// pivot high/low
+pivotHigh = ta.pivothigh(high, pivotLeft, pivotRight)
+pivotLow  = ta.pivotlow(low, pivotLeft, pivotRight)
+
+// Volume Calculations Function
+// @Returns bool values for certain leverages when volume above certain means
+liqudation(volume_, timePeriodMean)=>
+
+    avg      = math.avg(ta.highest(volume_, timePeriodMean), ta.lowest(volume_, timePeriodMean))
+    avgMean  = ta.sma(avg, timePeriodMean+10)
+
+    _100x = avg >= 1.2   * avgMean
+    _50x  = avg >= 1.1   * avgMean
+    _25x  = avg >= 1.05  * avgMean
+    _10x  = avg >= 1.025 * avgMean
+    _5_x  = avg > avgMean
+
+    [_100x, _50x, _25x, _10x, _5_x]
+
+[_100x, _50x, _25x, _10x, _5_x] = liqudation(volume, timePeriodMean)
+
+
+// Plot Line
+line(_x1, _x2, _y, _lineColor, _style, _width) =>
+    line.new(x1=_x1, y1=_y, x2=_x2, y2=_y, color=_lineColor, style=_style, width=_width)
+
+// Extend Lines Function
+extendLine(_lineArray) =>
+    if array.size(_lineArray) > 0
+
+        for lne in _lineArray
+                
+            x2 = lne.get_x2()
+            yValue = lne.get_y1()
+
+            if bar_index - 1 == x2 
+                if not(high > yValue and low < yValue)
+                    lne.set_x2(bar_index)
+                else 
+                    lne.delete()
+
+// Liquidation Lines 
+// @Function to plot Liquidation Lines with limited amount to 500
+level(_1, y, x_, array_lines, colorUp, colorDn, lines_width)=>
+
+    line l = na
+
+    // Percent at which position is liquidated
+    percentRisk =   y == 5  ? 0.20 // 20%
+                  : y == 10 ? 0.10 // 10%
+                  : y == 25 ? 0.04 //  4%
+                  : y == 50 ? 0.02 //  2%
+                  : y == 100? 0.01 //  1%
+                  : 0
+
+    if _1 and after_time
+
+        if not na(pivotLow) and x_ and low[pivotRight] / (1 + percentRisk) > close * (1 - prc_from_price)
+            l := line( bar_index[pivotRight], 
+                       bar_index, 
+                       low[pivotRight] / (1 + percentRisk),
+                       colorDn, 
+                       line.style_solid, 
+                       lines_width
+                         )
+
+            if array.size(array_lines) == 500
+                line.delete(array.shift(array_lines))
+
+            array.push(array_lines, l)
+
+        if not na(pivotHigh) and x_ and high[pivotRight] * (1 + percentRisk) < close * (1 + prc_from_price)
+            l := line( bar_index[pivotRight], 
+                       bar_index, 
+                       high[pivotRight] * (1 + percentRisk), 
+                       colorUp, 
+                       line.style_solid, 
+                       lines_width
+                         )
+
+            if array.size(array_lines) == 500
+                line.delete(array.shift(array_lines))
+
+            array.push(array_lines, l)
+
+        extendLine(array_lines)
+
+
+cleanOldLiqs(array<line> arrayLines, int lev) =>
+    int lev_transp = lev == 5 ? x5_transp : lev == 10 ? x10_transp : lev == 25 ? x25_transp : lev == 50 ? x50_transp : x100_transp
+    for lne in arrayLines 
+
+        if na(lne)
+            arrayLines.remove(arrayLines.indexof(lne))
+            continue
+
+        float lne_y1 = lne.get_y1()
+        int lne_x1 = lne.get_x1()
+        int i_tf = timeframe.period == "D" ? 1440 : int(str.tonumber(timeframe.period)) 
+
+        if lne.get_x2() == bar_index 
+            if lne_y1 > close 
+                if lne_x1 <= bar_index - days * 1440 / i_tf or lne.get_x2() != bar_index
+                    arrayLines.remove(arrayLines.indexof(lne))
+                    lne.delete()
+                if lne_y1 > close * (1 + prc_from_price) 
+                    lne.set_color(na)
+                else if lne.get_x2() == bar_index 
+                    lne.set_color(col_up)
+
+            else 
+                if lne_x1 <= bar_index - days * 1440 / i_tf or lne.get_x2() != bar_index
+                    arrayLines.remove(arrayLines.indexof(lne))
+                    lne.delete()
+                if lne_y1 < close * (1 - prc_from_price)
+                    lne.set_color(na)
+                else if lne.get_x2() == bar_index
+                    lne.set_color(col_dn)
+
+
+
+
+//// Calculations & Visuals 
+
+// Arrays of Liquidation Levels lines
+var Array_5   = array.new_line()
+var Array_10  = array.new_line()
+var Array_25  = array.new_line()
+var Array_50  = array.new_line()
+var Array_100 = array.new_line()
+
+// Show 5x, 10x, 25x, 50x, 100x Liquidation Leverages
+level(_5, 5, _5_x, Array_5, col_up, col_dn, lines_width)
+level(_10, 10, _10x, Array_10, col_up, col_dn, lines_width)
+level(_25, 25, _25x, Array_25, col_up, col_dn, lines_width)
+level(_50, 50, _50x, Array_50, col_up, col_dn, lines_width)
+level(_100, 100, _100x, Array_100, col_up, col_dn, lines_width)
+
+cleanOldLiqs(Array_5, 5)
+cleanOldLiqs(Array_10, 10)
+cleanOldLiqs(Array_25, 25)
+cleanOldLiqs(Array_50, 50)
+cleanOldLiqs(Array_100, 100)
+
+
+
+
+
+///// Volumatic Support/Resistance Levels [BigBeluga]
+
+//// Inputs
+
+// Volumatic Support/Resistance Levels (VSRL) | Settings
+string g_vsrl_s     = "Volumatic Support/Resistance Levels (VSRL) | Settings"
+int length          = input.int(100, "Length", group=g_vsrl_s)
+int upper_threshold = input.int(50, "Resistance Max Volume %", maxval = 100, minval = 0, inline = "sup", group=g_vsrl_s), sup_col = input.color(color.rgb(28, 194, 114), "", inline = "sup", group=g_vsrl_s)
+int lower_threshold = input.int(50, "Support Max Volume %", maxval = 100, minval = 0, inline = "res", group=g_vsrl_s), res_col = input.color(color.rgb(206, 37, 37), "", inline = "res", group=g_vsrl_s)
+int bars_threshold  = input.int(50, "Bars Max Volume %", maxval = 100, minval = 0, inline = "bar", group=g_vsrl_s), bar_col = input.color(color.rgb(255, 145, 55), "", inline = "bar", group=g_vsrl_s)
+
+
+
+
+//// Variables 
+var upper1 = float(na)
+var upper2 = float(na)
+var lower1 = float(na)
+var lower2 = float(na)
+// }
+
+
+
+
+
+//// Calculations 
+
+h = ta.highest(length)
+l = ta.lowest(length)
+
+n_vol = volume / ta.percentile_linear_interpolation(volume, 500, 100)*100
+
+if h[1] == high[1] and high < h 
+    upper1 := h 
+    upper2 := h 
+
+if l[1] == low[1] and low > l 
+    lower1 := l 
+    lower2 := l 
+
+atr = ta.atr(200) / 100
+upper_col = upper1 != upper1[1] ? color(na) : res_col 
+lower_col = lower1 != lower1[1] ? color(na) : sup_col
+// }
+
+
+
+
+//// Visuals 
+
+plot(upper1, "Resistance", color = upper_col)
+ph1 = plot(upper1 + atr*n_vol, color = na, editable = false)
+ph2 = plot(upper2 - atr*n_vol, color = na, editable = false)
+
+upper_fill = upper1 != upper1[1] ? na : color.from_gradient(n_vol, 0, 100, color.new(res_col, 80), res_col)
+
+fill(ph1, ph2, upper_fill)
+
+plot(lower1, "Support", color = lower_col)
+pl1 = plot(lower2 + atr*n_vol, color = na, editable = false)
+pl2 = plot(lower2 - atr*n_vol, color = na, editable = false)
+
+lower_fill = lower1 != lower1[1] ? na : color.from_gradient(n_vol, 0, 100, color.new(sup_col, 80), sup_col)
+
+fill(pl1, pl2, lower_fill)
+
+plotshape(n_vol > lower_threshold ? lower2 - atr*n_vol : float(na), "Max Volume Support", shape.circle, location.absolute, color = sup_col, size = size.tiny)
+plotshape(n_vol > lower_threshold ? lower2 + atr*n_vol : float(na), "Max Volume Support", shape.circle, location.absolute, color = sup_col, size = size.tiny)
+
+plotshape(n_vol > upper_threshold ? upper2 + atr*n_vol : float(na), "Max Volume Resistance", shape.circle, location.absolute, color = res_col, size = size.tiny)
+plotshape(n_vol > upper_threshold ? upper2 - atr*n_vol : float(na), "Max Volume Resistance", shape.circle, location.absolute, color = res_col, size = size.tiny)
+
+barcolor(n_vol > bars_threshold ? bar_col : na)
+// }
+
+
+
+
+
+
+
+
+///// Volumatic VIDYA [BigBeluga]
+
+//// Inputs 
+
+// Input parameters for length, momentum, and source data
+// VIDYA | Settings
+string g_vidya_s        = "VIDYA | Settings"
+int vidya_length        = input.int(57, 'VIDYA Length', group=g_vidya_s) // Length of the VIDYA calculation
+int vidya_momentum      = input.int(20, 'VIDYA Momentum', group=g_vidya_s) // Momentum length for VIDYA
+float band_distance     = input.float(2, 'Distance factor for upper/lower bands', step = 0.1, group=g_vidya_s) // Distance factor for upper/lower bands
+float source = input.source(close, 'Source') // Source for VIDYA calculation
+
+// VIDYA | Styles 
+string g_vidya_styles   = "VIDYA | Styles"
+color up_trend_color    = input(#17dfad, '+', group = g_vidya_styles, inline = 'c') // Color for uptrend
+color down_trend_color  = input(#dd326b, '-', group = g_vidya_styles, inline = 'c') // Color for downtrend
+bool shadow             = input.bool(true, 'Shadow', group = g_vidya_styles, inline = 'c')
+
+
+
+
+//// Variables  
+// Define pivot parameters
+int pivot_left_bars = 3 // Left side pivot bars
+int pivot_right_bars = pivot_left_bars // Right side pivot bars
+
+// Initialize variables for line, volume, and trend state
+var line pivot_line = na // Variable for storing line references
+var float volume_value = na // Variable for storing volume data
+float smoothed_value = na // Smoothing variable for VIDYA trend levels
+var bool is_trend_up = false // Boolean variable for tracking trend direction
+
+// Initialize arrays for storing line and volume information
+var array<line> liquidity_lines_low = array.new<line>(500) // Array for storing lines for lows
+var array<line> liquidity_lines_high = array.new<line>(500) // Array for storing lines for highs
+
+var float up_trend_volume = na // Volume accumulated during uptrend
+var float down_trend_volume = na // Volume accumulated during downtrend
+// }
+
+
+
+//// Functions 
+
+// Define VIDYA (Variable Index Dynamic Average) function
+vidya_calc(src, vidya_length, vidya_momentum) =>
+    float momentum = ta.change(src)
+    float sum_pos_momentum = math.sum(momentum >= 0 ? momentum : 0.0, vidya_momentum)
+    float sum_neg_momentum = math.sum(momentum >= 0 ? 0.0 : -momentum, vidya_momentum)
+    float abs_cmo = math.abs(100 * (sum_pos_momentum - sum_neg_momentum) / (sum_pos_momentum + sum_neg_momentum))
+    float alpha = 2 / (vidya_length + 1)
+    var float vidya_value = 0.0
+    vidya_value := alpha * abs_cmo / 100 * src + (1 - alpha * abs_cmo / 100) * nz(vidya_value[1])
+
+    ta.sma(vidya_value, 15)
+
+
+// Method to extend lines and add labels for liquidity levels
+method extend_liquidity_lines(array<line> line_array, float price_level, bool is_cross, volume_val) =>
+    if line_array.size() > 0 and last_bar_index - bar_index < 5000
+        for i = 0 to line_array.size() - 1 by 1
+            if i < line_array.size()
+                line liquidity_line = line_array.get(i)
+                float current_line_level = line.get_y2(liquidity_line)
+                bool price_cross = is_cross ? price_level < current_line_level and price_level[1] >= current_line_level : price_level > current_line_level and price_level[1] <= current_line_level
+
+                bool is_short_line = bar_index - line.get_x1(liquidity_line) < 50
+
+                if price_cross and is_short_line
+                    line.set_x2(liquidity_line, bar_index)
+                    line_array.remove(i)
+
+                    // Add volume label to the liquidity zone
+                    label.new(bar_index - 1, price_level[1], str.tostring(volume_val, format.volume), color = color.rgb(0, 0, 0, 99), style = is_cross ? label.style_label_lower_left : label.style_label_upper_left, textcolor = chart.fg_color, size = size.small)
+
+                    // Add a circle label to represent liquidity zone
+                    label.new(bar_index - 1, price_level[1], text = '◉', color = #00000003, textcolor = is_cross ? down_trend_color : up_trend_color, style = label.style_label_center, size = size.normal)
+                    // }
+
+
+
+
+//// Calculations 
+// Calculate the Average True Range (ATR)
+float atr_value = ta.atr(200) // ATR calculation with length of 200
+
+// Calculate the VIDYA (Variable Index Dynamic Average)
+vidya_value = vidya_calc(source, vidya_length, vidya_momentum)
+
+// Calculate upper and lower bands based on VIDYA and ATR
+float upper_band = vidya_value + atr_value * band_distance
+float lower_band = vidya_value - atr_value * band_distance
+
+// Detect trend direction using crossovers of source with bands
+if ta.crossover(source, upper_band)
+    is_trend_up := true
+    is_trend_up
+if ta.crossunder(source, lower_band)
+    is_trend_up := false
+    is_trend_up
+
+// Set trend-based smoothing variable
+if is_trend_up
+    smoothed_value := lower_band
+    smoothed_value
+if not is_trend_up
+    smoothed_value := upper_band
+    smoothed_value
+if ta.change(is_trend_up)
+    smoothed_value := na
+    smoothed_value
+
+// // Calculate pivot highs and lows for price action
+// bool pivot_high = not na(ta.pivothigh(pivot_left_bars, pivot_right_bars))
+// bool pivot_low = not na(ta.pivotlow(close, pivot_left_bars, pivot_right_bars))
+
+// // Create and store lines for pivot lows (support zones)
+// if low[pivot_right_bars] > smoothed_value and pivot_low
+//     pivot_line := line.new(bar_index[pivot_right_bars], low[pivot_right_bars], bar_index[pivot_right_bars] + 5, low[pivot_right_bars], color = color.new(up_trend_color, 50))
+
+//     liquidity_lines_low.push(pivot_line)
+//     volume_value := math.sum(volume, pivot_right_bars + pivot_left_bars) / (pivot_right_bars + pivot_left_bars)
+//     volume_value
+
+// // Create and store lines for pivot highs (resistance zones)
+// if high[pivot_right_bars] < smoothed_value and pivot_high
+//     pivot_line := line.new(bar_index[pivot_right_bars], high[pivot_right_bars], bar_index[pivot_right_bars] + 5, high[pivot_right_bars], color = color.new(down_trend_color, 50))
+
+//     liquidity_lines_high.push(pivot_line)
+//     volume_value := math.sum(-volume, pivot_right_bars + pivot_left_bars) / (pivot_right_bars + pivot_left_bars)
+//     volume_value
+
+// // Extend lines to track price movements
+// liquidity_lines_high.extend_liquidity_lines(smoothed_value, true, volume_value)
+// liquidity_lines_low.extend_liquidity_lines(smoothed_value, false, volume_value)
+
+// Detect changes in the trend direction
+bool trend_cross_up = not is_trend_up[1] and is_trend_up
+bool trend_cross_down = not is_trend_up and is_trend_up[1]
+
+// Reset volume counters when trend changes
+if ta.change(trend_cross_up) or ta.change(trend_cross_down)
+    up_trend_volume := 0
+    down_trend_volume := 0
+    down_trend_volume
+
+// Accumulate volume during trends
+if not(ta.change(trend_cross_up) or ta.change(trend_cross_down))
+    up_trend_volume := up_trend_volume + (close > open ? volume : 0)
+    down_trend_volume := down_trend_volume + (close < open ? volume : 0)
+    down_trend_volume
+
+// Calculate average volume
+float avg_volume_delta = (up_trend_volume + down_trend_volume) / 2
+
+// Determine the color of the trend
+color trend_color = is_trend_up ? up_trend_color : not is_trend_up ? down_trend_color : chart.fg_color
+
+// Calculate delta volume percentage
+string delta_volume = str.tostring((up_trend_volume - down_trend_volume) / avg_volume_delta * 100, format.percent) == 'NaN%' ? '0%' : str.tostring((up_trend_volume - down_trend_volume) / avg_volume_delta * 100, format.percent)
+
+// }
+
+
+
+
+//// Visuals 
+
+// Display labels for volume and trend statistics on the last bar
+if barstate.islast
+    label.delete(label.new(bar_index, smoothed_value, 'Buy: ' + str.tostring(up_trend_volume, format.volume) + '\n Sell: ' + str.tostring(down_trend_volume, format.volume) + '\nDelta Volume: ' + delta_volume, color = color.new(trend_color, 90), style = is_trend_up ? label.style_label_upper_left : label.style_label_lower_left, textcolor = chart.fg_color)[1])
+
+    label.delete(label.new(bar_index, smoothed_value, text = '✪', color = #00000003, textcolor = trend_color, style = label.style_label_center, size = size.large)[1])
+
+// Plot the VIDYA trend line
+p1 = plot(smoothed_value, color = trend_color, linewidth = 2, style = plot.style_linebr)
+p2 = plot(hl2, display = display.none)
+
+// Fill between the plot and the VIDYA line
+fill(p1, p2, smoothed_value, hl2, color.new(trend_color, shadow ? 80 : 100), na)
+
+// Plot trend change markers (up and down arrows)
+plotshape(series = trend_cross_up[1] ? smoothed_value[0] : na, title = 'Trend Up', style = shape.labelup, location = location.absolute, color = color.new(up_trend_color, 50), text = '▲', textcolor = chart.fg_color)
+
+plotshape(series = trend_cross_down[1] ? smoothed_value[0] : na, title = 'Trend Down', style = shape.labeldown, location = location.absolute, color = color.new(down_trend_color, 50), text = '▼', textcolor = chart.fg_color)
+// }

@@ -1,0 +1,151 @@
+//@version=6
+indicator(title      = "Dynamic Fair-Value Ribbon Pro [Range / VWAP, ATR-Adaptive] — Informational Only", shorttitle = "Fair-Value Ribbon Pro", overlay    = true, max_labels_count = 500, max_lines_count  = 500)
+
+//---------------------------------------------------------
+// Inputs
+//---------------------------------------------------------
+groupEngine = "Fair-Value Engine"
+engineMode  = input.string("Range", "Engine Mode", options = ["Range", "VWAP+Stdev"], group = groupEngine)
+
+// Range mode params
+rangeLen    = input.int(100, "Range Lookback (bars)", minval = 10, maxval = 2000, group = groupEngine)
+fairLowPct  = input.float(0.3, "Range Mode: Lower Percent",  minval = 0.0, maxval = 0.5, step = 0.05, group = groupEngine)
+fairHighPct = input.float(0.7, "Range Mode: Upper Percent",  minval = 0.5, maxval = 1.0, step = 0.05, group = groupEngine)
+
+// VWAP+Stdev mode params
+devMult     = input.float(1.0, "VWAP Mode: Stdev Multiplier", minval = 0.1, maxval = 5.0, step = 0.1, group = groupEngine)
+
+// ATR adaptation
+groupAtr       = "ATR Adaptive Width"
+useAtrAdapt    = input.bool(true,  "Use ATR Adaptive Width", group = groupAtr)
+atrLen         = input.int(14,     "ATR Length", minval = 1, group = groupAtr)
+atrRefPercent  = input.float(1.0,  "Reference ATR (% of price)", minval = 0.1, maxval = 10.0, step = 0.1, group = groupAtr)
+minScale       = input.float(0.5,  "Min Width Scale", minval = 0.1, maxval = 5.0, step = 0.1, group = groupAtr)
+maxScale       = input.float(2.0,  "Max Width Scale", minval = 0.2, maxval = 10.0, step = 0.1, group = groupAtr)
+
+// Visuals
+groupStyle      = "Visuals"
+showCenterLine  = input.bool(true,  "Show Center Line", group = groupStyle)
+colorFairCloud  = input.color(color.new(color.teal, 80), "Fair Ribbon Color", group = groupStyle)
+colorUnfairHigh = input.color(color.new(color.red,  0),  "Unfair High Bar Color", group = groupStyle)
+colorUnfairLow  = input.color(color.new(color.blue, 0),  "Unfair Low Bar Color",  group = groupStyle)
+fadeInsideBars  = input.bool(true,  "Fade Bars Inside Fair Zone", group = groupStyle)
+showStatePanel  = input.bool(true,  "Show State Panel (Top Right)", group = groupStyle)
+
+//---------------------------------------------------------
+// Core engine: compute fairMid, fairLow, fairHigh
+//---------------------------------------------------------
+var float fairMid      = na
+var float fairLow      = na
+var float fairHigh     = na
+var float baseHalfSpan = na
+
+// Range-based engine
+hiRange = ta.highest(high, rangeLen)
+loRange = ta.lowest(low,  rangeLen)
+rng     = hiRange - loRange
+rngSafe = rng == 0.0 ? 1e-10 : rng
+
+rangeFairLow  = loRange + rngSafe * fairLowPct
+rangeFairHigh = loRange + rngSafe * fairHighPct
+rangeFairMid  = (rangeFairLow + rangeFairHigh) / 2.0
+rangeHalfSpan = (rangeFairHigh - rangeFairLow) / 2.0
+
+// VWAP + StdDev engine
+src    = hlc3
+vwap   = ta.vwap(src)
+stdev  = ta.stdev(close, rangeLen)
+stSafe = stdev == 0.0 ? 1e-10 : stdev
+
+vwapMid      = vwap
+vwapHalfSpan = stSafe * devMult
+
+// Select engine
+if engineMode == "Range"
+    fairMid      := rangeFairMid
+    baseHalfSpan := rangeHalfSpan
+else
+    fairMid      := vwapMid
+    baseHalfSpan := vwapHalfSpan
+
+// ATR-based width adaptation
+atr        = ta.atr(atrLen)
+atrRel     = close == 0.0 ? 0.0 : atr / close * 100.0   // ATR in % of price
+atrRef     = atrRefPercent
+scaleRaw   = atrRef == 0.0 ? 1.0 : atrRel / atrRef
+scaleClamped = math.min(maxScale, math.max(minScale, scaleRaw))
+widthScale = useAtrAdapt ? scaleClamped : 1.0
+
+halfSpan = baseHalfSpan * widthScale
+fairLow  := fairMid - halfSpan
+fairHigh := fairMid + halfSpan
+
+//---------------------------------------------------------
+// State: fair vs unfair
+//---------------------------------------------------------
+isFair      = close >= fairLow and close <= fairHigh
+isUnfairHi  = close > fairHigh
+isUnfairLo  = close < fairLow
+
+state =
+     isFair     ? 0 :
+     isUnfairHi ? 1 :
+                  -1
+
+//---------------------------------------------------------
+// Plots: cloud + midline
+//---------------------------------------------------------
+pFairLow  = plot(fairLow,  title = "Fair Ribbon Low",  color = color.new(colorFairCloud, 30), linewidth = 1)
+pFairHigh = plot(fairHigh, title = "Fair Ribbon High", color = color.new(colorFairCloud, 30), linewidth = 1)
+
+fill(pFairLow, pFairHigh, color = colorFairCloud, title = "Fair-Value Cloud")
+
+// Midline – simplified, no style namespace
+plot(showCenterLine ? fairMid : na, title = "Fair Ribbon Mid", color = color.new(color.white, 0), linewidth = 2)
+
+//---------------------------------------------------------
+// Bar colors
+//---------------------------------------------------------
+barColor =
+     isUnfairHi ? colorUnfairHigh :
+     isUnfairLo ? colorUnfairLow  :
+     fadeInsideBars ? color.new(color.gray, 70) : na
+
+barcolor(barColor)
+
+//---------------------------------------------------------
+// Fair / Unfair state panel
+//---------------------------------------------------------
+var table panel = na
+
+if showStatePanel
+    if na(panel)
+        panel := table.new(position.top_right, 1, 2, border_width = 1)
+
+    if barstate.islast
+        // Header
+        table.cell(panel, 0, 0, "Fair-Value State", text_color = color.white, bgcolor    = color.new(color.black, 0))
+
+        // Text + background
+        engineLabel = engineMode == "Range" ? "Range" : "VWAP+Stdev"
+        stateText   = state == 0 ? "Inside Ribbon (Fair Zone)" :
+                      state == 1 ? "Above Ribbon (Unfair High Zone)" :
+                                   "Below Ribbon (Unfair Low Zone)"
+
+        stateBg = state == 0 ? color.new(colorFairCloud, 0) :
+                  state == 1 ? color.new(colorUnfairHigh, 80) :
+                               color.new(colorUnfairLow, 80)
+
+        table.cell(panel, 0, 1, engineLabel + " • " + stateText, text_color = color.white, bgcolor    = stateBg)
+
+//---------------------------------------------------------
+// Notes (informational-only)
+//---------------------------------------------------------
+// This script draws a dynamic fair-value ribbon derived only from
+// historical price, volume (VWAP) and volatility (ATR). It highlights
+// when price is inside a chosen "fair" band versus outside in "unfair"
+// high/low zones.
+//
+// It does NOT predict or guarantee that price will revert to the ribbon
+// or respect any of these zones. It is strictly an informational, visual
+// tool and does not constitute financial advice or a trading signal.

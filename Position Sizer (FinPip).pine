@@ -1,0 +1,99 @@
+//@version=5
+indicator("Advanced Position Sizer (Risk Management)", shorttitle="Pos. Size Calc", overlay=true)
+
+// --- 1. User Inputs for Risk and Capital ---
+// Total trading capital is crucial for calculating the dollar risk amount.
+capital = input.float(10000.0, title="Total Account Capital ($)", group="Risk Settings")
+// Percentage of capital to risk on a single trade. Default: 2.5%
+riskPercent = input.float(2.5, title="Risk Percentage per Trade (%)", minval=0.01, group="Risk Settings") / 100.0
+// The default Reward-to-Risk (R:R) ratio to use for the profit target.
+defaultRR = input.float(4.0, title="Default Reward:Risk Ratio", minval=0.1, group="Profit Target Settings")
+
+// --- 2. User Inputs for Trade Levels ---
+// Note: Entry and SL are set using `input.price` which uses the chart's price scale.
+entryPrice = input.price(100.0, title="Entry Price", group="Trade Levels")
+stopLossPrice = input.price(97.5, title="Stop-Loss (SL) Price", group="Trade Levels")
+
+// --- 3. Position Sizing Calculations ---
+
+// Calculate the fixed dollar amount risked on this trade.
+riskAmount = capital * riskPercent
+
+// Calculate the risk per unit/share/contract (distance from entry to SL).
+// Use math.abs to ensure the distance is always positive, regardless of long/short.
+riskPerUnit = math.abs(entryPrice - stopLossPrice)
+
+// Check if riskPerUnit is valid (not zero) to avoid division by zero.
+var float positionSize = na
+if riskPerUnit > 0
+    // Calculate the position size (number of units to buy/sell).
+    positionSize := riskAmount / riskPerUnit
+else
+    // Handle the case where SL and Entry are the same (invalid trade setup).
+    positionSize := 0
+
+// --- 4. Profit Target Calculation ---
+
+// Determine the direction of the trade
+isLong = entryPrice > stopLossPrice
+isShort = entryPrice < stopLossPrice
+
+// Calculate the profit target price based on the R:R ratio
+float profitTargetPrice = na
+if isLong
+    // For Long: Entry + (riskPerUnit * defaultRR)
+    profitTargetPrice := entryPrice + (riskPerUnit * defaultRR)
+else if isShort
+    // For Short: Entry - (riskPerUnit * defaultRR)
+    profitTargetPrice := entryPrice - (riskPerUnit * defaultRR)
+
+// --- 5. Display on Chart (Plotting Levels) ---
+
+// Plot Entry Level (only if position size is calculated)
+plot(positionSize > 0 ? entryPrice : na, title="Entry Level", color=color.blue, linewidth=2, trackprice=true)
+// Plot Stop-Loss Level
+plot(positionSize > 0 ? stopLossPrice : na, title="Stop-Loss Level", color=color.red, linewidth=2, trackprice=true)
+// Plot Profit Target Level
+plot(positionSize > 0 ? profitTargetPrice : na, title="Profit Target (4:1 R:R)", color=color.lime, linewidth=2, trackprice=true)
+
+// --- 6. Display Position Metrics (Table HUD - Fixed Corner) ---
+
+// Create a formatted string for the risk and reward values
+var string metrics = ""
+if positionSize > 0
+    rewardAmount = riskAmount * defaultRR
+    metrics := "📊 **Risk & Position Summary**\n" +
+               "--------------------------------------\n" +
+               "Account Capital: $" + str.tostring(capital, "#,##0.00") + "\n" +
+               "Risk %: " + str.tostring(riskPercent * 100) + "%\n" +
+               "Risk Amount: $" + str.tostring(riskAmount, "#,##0.00") + "\n" +
+               "SL Distance (Risk/Unit): " + str.tostring(riskPerUnit, "#.######") + "\n" +
+               "**Required Position Size:** **" + str.tostring(math.round(positionSize)) + "** units\n" +
+               "R:R Ratio: 1 : " + str.tostring(defaultRR) + "\n" +
+               "Potential Profit: $" + str.tostring(rewardAmount, "#,##0.00")
+
+else
+    metrics := "Invalid Trade Setup: Entry and SL cannot be the same price."
+
+// Use a table for reliable fixed screen position HUD
+if barstate.islast
+    // 1. Create the table anchored to the bottom left
+    // White background, 90% opacity (10% transparency = 10)
+    var table metricsTable = table.new(
+         position.bottom_left,
+         1, 1, // 1 column, 1 row
+         color.new(color.white, 10), 
+         frame_width = 1,
+         frame_color = color.new(color.black, 50)
+         )
+
+    // 2. Set the content of the cell
+    table.cell(
+         metricsTable,
+         0, 0, // Cell at row 0, column 0
+         metrics,
+         text_color = color.black, // Black text
+         text_size = size.normal,
+         text_halign = text.align_left,
+         bgcolor = color.new(color.white, 10) // Match table background
+         )

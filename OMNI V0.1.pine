@@ -1,0 +1,218 @@
+//@version=5
+indicator(title='OMNI V0.1', overlay=true, max_labels_count=500)
+
+// =====================================
+// === VWAPony - Inputs & Variables ====
+// =====================================
+
+// Inputs Fibos Values
+fib1 = input.float(title='Fibo extension 1', defval=1.618, group="VWAPony Settings")
+fib2 = input.float(title='Fibo extension 2', defval=2.618, group="VWAPony Settings")
+
+// VWAP Calculations
+reso = input.timeframe(title='Resolution VWAP', defval='D', group="VWAPony Settings")
+t = time(reso)
+debut = na(t[1]) or t > t[1]
+
+var addsource = 0.0
+var addvol = 0.0
+
+addsource := debut ? hlc3 * volume : addsource[1] + hlc3 * volume
+addvol := debut ? volume : addvol[1] + volume
+VWAP = addsource / addvol
+
+var sn = 0.0
+sn := debut ? 0.0 : sn[1] + volume * (hlc3 - VWAP[1]) * (hlc3 - VWAP)
+sd = math.sqrt(sn / addvol)
+
+Fibp2 = VWAP + fib2 * sd
+Fibp1 = VWAP + fib1 * sd
+Fibm1 = VWAP - fib1 * sd
+Fibm2 = VWAP - fib2 * sd
+
+// VWAP Plots Colors
+color_sup = input.color(color.red,title='Couleur VWAP High', group="VWAPony Colors")
+color_low = input.color(color.green,title='Couleur VWAP Low', group="VWAPony Colors")
+color_line = input.color(color.orange,title='Couleur VWAP Line', group="VWAPony Colors")
+
+// VWAP Sup
+transparency =  input.bool(false, "Afficher VWAP Supérieur",   inline = "01", group="VWAPony Settings")
+w_reso = input.timeframe(title='Resolution VWAP supérieur', defval='W', group="VWAPony Settings", inline = "01")
+t_sup = time(w_reso)
+debut_sup = na(t_sup[1]) or t_sup > t_sup[1]
+
+var addsource_sup = 0.0
+var addvol_sup = 0.0
+addsource_sup := debut_sup ? hlc3 * volume : addsource_sup[1] + hlc3 * volume
+addvol_sup := debut_sup ? volume : addvol_sup[1] + volume
+VWAP_sup = addsource_sup / addvol_sup
+
+var sn_sup = 0.0
+sn_sup := debut_sup ? 0.0 : sn_sup[1] + volume * (hlc3 - VWAP_sup[1]) * (hlc3 - VWAP_sup)
+sd_sup = math.sqrt(sn_sup / addvol_sup)
+
+w_color_sup = input.color(color.red,title='Couleur VWAP Sup High', group="VWAPony Sup Colors")
+w_color_low = input.color(color.green,title='Couleur VWAP Sup Low', group="VWAPony Sup Colors")
+w_color_line = input.color(color.orange,title='Couleur VWAP Sup Line', group="VWAPony Sup Colors")
+
+Fibp2_sup = VWAP_sup + fib2 * sd_sup
+Fibp1_sup = VWAP_sup + fib1 * sd_sup
+Fibm1_sup = VWAP_sup - fib1 * sd_sup
+Fibm2_sup = VWAP_sup - fib2 * sd_sup
+
+// =====================================
+// === VWAPony - Plots & Fills =========
+// =====================================
+
+plot(VWAP, title='VWAP', color=color.new(color_line, 0))
+pFibp2 = plot(Fibp2, title='Fibp2', color=color.new(color_sup, 0))
+pFibp1 = plot(Fibp1, title='Fibp1',color=color.new(color_sup, 0))
+pFibm1 = plot(Fibm1, title='Fibm1',color=color.new(color_low, 0))
+pFibm2 = plot(Fibm2, title='Fibm2',color=color.new(color_low, 0))
+
+fill(pFibp2, pFibp1, color.new(color_sup, 90))
+fill(pFibm2, pFibm1, color.new(color_low, 90))
+
+// VWAP Sup Plots
+plot(transparency ? VWAP_sup : na, title='VWAP Sup', color=color.new(w_color_line, 9))
+pFibp2_sup = plot(transparency ? Fibp2_sup : na, title='Fibp2_sup', color=color.new(w_color_sup, 90))
+pFibp1_sup = plot(transparency ? Fibp1_sup : na, title='Fibp1_sup',color=color.new(w_color_sup, 90))
+pFibm1_sup = plot(transparency ? Fibm1_sup : na, title='Fibm1_sup',color=color.new(w_color_low, 90))
+pFibm2_sup = plot(transparency ? Fibm2_sup : na, title='Fibm2_sup',color=color.new(w_color_low, 90))
+
+// VWAP Sup Fills
+fill(pFibp2_sup, pFibp1_sup,color.new(w_color_sup, 90))
+fill(pFibm2_sup, pFibm1_sup, color.new(w_color_low, 90))
+
+// =====================================
+// == Absorption Orderflow - Paramètres =
+// =====================================
+minVolume      = input.int(1200, "Volume min (contrats)", minval=1, group="Absorption Settings")
+minDeltaProxy  = input.float(200.0, "Seuil delta proxy min", step=1, group="Absorption Settings")
+priceTolerance = input.float(0.2, "Tolérance mouvement prix (%)", step=0.1, group="Absorption Settings")
+closeHighFrac  = input.float(0.8, "Close zone haute (fraction)", step=0.05, group="Absorption Settings")
+closeLowFrac   = input.float(0.2, "Close zone basse (fraction)", step=0.05, group="Absorption Settings")
+intensityScale = input.float(12.0, "Échelle intensité", step=0.1, group="Absorption Settings")
+emaLength      = input.int(100, "EMA de filtrage", minval=1, group="Absorption Settings")
+showDebug      = input.bool(false, "Afficher debug (deltaProxy/level/volume)", group="Absorption Settings")
+
+// =====================================
+// === Absorption Orderflow - Calculs ==
+// =====================================
+candleRange    = high - low
+safeRange      = candleRange == 0 ? syminfo.mintick : candleRange
+
+deltaProxy     = volume * (close - open) / safeRange
+priceMovePct   = math.abs(close - open) / close * 100.0
+closePosition  = (close - low) / safeRange
+emaFilter      = ta.ema(close, emaLength)
+
+isLiquid       = volume >= minVolume
+intensityRaw   = math.abs(deltaProxy) / (minDeltaProxy * intensityScale)
+level          = math.min(10, math.max(1, math.floor(intensityRaw * 10)))
+
+// Conditions Absorption + Filtre EMA (Inverse)
+absBuy = isLiquid and
+         deltaProxy > minDeltaProxy and
+         close > open and
+         priceMovePct < priceTolerance and
+         closePosition >= closeHighFrac and
+         close > emaFilter      // Absorption d'Offre (Pression Achat)
+
+absSell = isLiquid and
+          deltaProxy < -minDeltaProxy and
+          close < open and
+          priceMovePct < priceTolerance and
+          closePosition <= closeLowFrac and
+          close < emaFilter     // Absorption de Demande (Pression Vente)
+
+// =====================================
+// === FILTRE VWAP - CONDITIONS (INVERSÉ) ==
+// =====================================
+
+// NOUVELLE LOGIQUE : Filtre Achat (Rouge) dans Zone Haute (Rouge). Filtre Vente (Vert) dans Zone Basse (Verte).
+// Logique de chevauchement (Overlap) utilisée pour assouplir le filtre.
+
+// Zone ROUGE (Haute) du VWAP : Filtre les signaux ROUGES (absBuy)
+// Check si la bougie chevauche la zone : (High > Zone Inférieure) ET (Low < Zone Supérieure)
+is_in_vwap_range_red = high > Fibp1 and low < Fibp2
+
+// Zone VERTE (Basse) du VWAP : Filtre les signaux VERTS (absSell)
+// Check si la bougie chevauche la zone : (High > Zone Inférieure) ET (Low < Zone Supérieure)
+is_in_vwap_range_green = high > Fibm2 and low < Fibm1
+
+// =====================================
+// == Absorption Orderflow - Affichage =
+// =====================================
+
+// Affichage EMA
+plot(emaFilter, color=color.gray, linewidth=1, title="EMA Filtre")
+
+// plot invisible pour garantir rendu des labels
+plot(close, display=display.none)
+
+// Utilitaires d'Affichage
+size_for_level(l) =>
+    _s = size.tiny
+    if l <= 7
+        _s := size.tiny
+    else if l <= 9
+        _s := size.small
+    else
+        _s := size.normal
+    _s
+
+transp_for_level(l) =>
+    maxTransp = 85.0
+    minTransp = 0.0
+    step = (maxTransp - minTransp) / 9.0
+    t = math.round(maxTransp - (l - 1) * step)
+    int(t)
+
+// Création de Labels
+// absBuy (Pression Achat) est ROUGE
+create_label_buy(lvl) =>
+    sz = size_for_level(lvl)
+    tp = transp_for_level(lvl)
+    yPos = high
+    label.new(bar_index, yPos, "",
+      yloc=yloc.price,
+      style=label.style_circle,
+      color=color.new(color.red, tp), 
+      textcolor=color.new(color.red, tp), 
+      size=sz)
+
+// absSell (Pression Vente) est VERT
+create_label_sell(lvl) =>
+    sz = size_for_level(lvl)
+    tp = transp_for_level(lvl)
+    yPos = low
+    label.new(bar_index, yPos, "",
+      yloc=yloc.price,
+      style=label.style_circle,
+      color=color.new(color.green, tp), 
+      textcolor=color.new(color.green, tp), 
+      size=sz)
+
+// Placement des Labels (Filtre VWAP Corrigé Appliqué)
+// Les signaux ROUGES (absBuy) sont filtrés dans la Zone ROUGE (is_in_vwap_range_red)
+if absBuy and is_in_vwap_range_red
+    create_label_buy(level)
+
+// Les signaux VERTS (absSell) sont filtrés dans la Zone VERTE (is_in_vwap_range_green)
+if absSell and is_in_vwap_range_green
+    create_label_sell(level)
+
+// Debug
+if showDebug
+    lblText = "d:" + str.tostring(deltaProxy, format.volume) +
+              " L:" + str.tostring(level) +
+              " V:" + str.tostring(volume)
+    label.new(bar_index, high + (safeRange * 0.1),
+      lblText,
+      yloc=yloc.price,
+      style=label.style_label_left,
+      color=color.new(color.black, 80),
+      textcolor=color.white,
+      size=size.tiny)
+      

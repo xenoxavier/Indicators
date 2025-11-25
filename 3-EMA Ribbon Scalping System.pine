@@ -1,0 +1,275 @@
+//@version=5
+indicator("3-EMA Ribbon Scalping System V2 [Clean]", overlay=true, shorttitle="3EMA-V2")
+
+// ============================================================================
+// USER INPUTS
+// ============================================================================
+showEMA = input.bool(true, "Show EMA Ribbon", group="Display Settings")
+showSignals = input.bool(true, "Show Entry Signals", group="Display Settings")
+showBackground = input.bool(true, "Show Background Colors", group="Display Settings")
+backgroundOpacity = input.int(95, "Background Opacity", minval=80, maxval=100, group="Display Settings")
+showInfoPanel = input.bool(true, "Show Info Panel", group="Display Settings")
+infoPanelSize = input.string("small", "Info Panel Size", options=["tiny", "small", "normal"], group="Display Settings")
+showVWAP = input.bool(true, "Show VWAP", group="Display Settings")
+
+// EMA Settings
+ema1Length = input.int(8, "Fast EMA", minval=1, group="EMA Settings")
+ema2Length = input.int(13, "Medium EMA", minval=1, group="EMA Settings")
+ema3Length = input.int(21, "Slow EMA", minval=1, group="EMA Settings")
+
+// RSI Settings
+rsiLength = input.int(14, "RSI Length", minval=1, group="RSI Settings")
+rsiOverbought = input.float(70, "RSI Overbought", minval=50, maxval=100, group="RSI Settings")
+rsiOversold = input.float(30, "RSI Oversold", minval=0, maxval=50, group="RSI Settings")
+rsiBullishMin = input.float(40, "RSI Bullish Minimum", minval=30, maxval=50, group="RSI Settings")
+rsiBearishMax = input.float(60, "RSI Bearish Maximum", minval=50, maxval=70, group="RSI Settings")
+
+// Volume Settings
+volMultiplier = input.float(1.2, "Volume Multiplier for Confirmation", minval=1.0, maxval=3.0, step=0.1, group="Volume Settings")
+volLength = input.int(20, "Volume MA Length", minval=1, group="Volume Settings")
+
+// Risk Management Display
+showSLTPMode = input.string("none", "Show SL/TP Lines", options=["none", "current", "labels"], group="Risk Management Display")
+stopLossATR = input.float(1.0, "Stop Loss (ATR Multiplier)", minval=0.5, maxval=3.0, step=0.1, group="Risk Management")
+takeProfit1 = input.float(1.0, "Take Profit 1 (Risk:Reward)", minval=0.5, maxval=3.0, step=0.1, group="Risk Management")
+takeProfit2 = input.float(2.0, "Take Profit 2 (Risk:Reward)", minval=1.0, maxval=5.0, step=0.1, group="Risk Management")
+
+// Signal Settings
+minBarsBetweenSignals = input.int(5, "Min Bars Between Signals", minval=1, maxval=20, group="Signal Settings")
+signalLabelStyle = input.string("text", "Signal Style", options=["text", "arrow", "both"], group="Signal Settings")
+
+// Alert Settings
+enableAlerts = input.bool(true, "Enable Alerts", group="Alert Settings")
+
+// ============================================================================
+// CALCULATIONS
+// ============================================================================
+
+// EMAs
+ema1 = ta.ema(close, ema1Length)
+ema2 = ta.ema(close, ema2Length)
+ema3 = ta.ema(close, ema3Length)
+
+// VWAP
+vwapValue = ta.vwap(hlc3)
+
+// RSI
+rsi = ta.rsi(close, rsiLength)
+
+// Volume
+volMA = ta.sma(volume, volLength)
+volumeSpike = volume > volMA * volMultiplier
+
+// ATR for Stop Loss
+atr = ta.atr(14)
+
+// Trend Detection
+bullishStack = ema1 > ema2 and ema2 > ema3
+bearishStack = ema1 < ema2 and ema2 < ema3
+neutralStack = not bullishStack and not bearishStack
+
+// Price Position
+aboveVWAP = close > vwapValue
+belowVWAP = close < vwapValue
+
+// ============================================================================
+// ENTRY CONDITIONS
+// ============================================================================
+
+// Long Entry Conditions
+pullbackToEMA1_Long = low <= ema1 and close > ema1 and open > ema1
+rsiValidLong = rsi > rsiBullishMin and rsi < rsiOverbought
+longCondition = bullishStack and aboveVWAP and pullbackToEMA1_Long and rsiValidLong and volumeSpike
+
+// Short Entry Conditions  
+pullbackToEMA1_Short = high >= ema1 and close < ema1 and open < ema1
+rsiValidShort = rsi < rsiBearishMax and rsi > rsiOversold
+shortCondition = bearishStack and belowVWAP and pullbackToEMA1_Short and rsiValidShort and volumeSpike
+
+// Filter for minimum distance between signals
+var float lastSignalBar = 0
+canSignal = bar_index - lastSignalBar >= minBarsBetweenSignals
+
+longSignal = longCondition and canSignal
+shortSignal = shortCondition and canSignal
+
+if longSignal or shortSignal
+    lastSignalBar := bar_index
+
+// ============================================================================
+// STOP LOSS & TAKE PROFIT CALCULATIONS
+// ============================================================================
+
+// Calculate SL/TP levels for display
+var float entryPrice = na
+var float stopLoss = na
+var float tp1 = na
+var float tp2 = na
+var int tradeDirection = 0
+var int entryBar = na
+
+if longSignal
+    entryPrice := close
+    stopLoss := close - (stopLossATR * atr)
+    tp1 := close + (close - stopLoss) * takeProfit1
+    tp2 := close + (close - stopLoss) * takeProfit2
+    tradeDirection := 1
+    entryBar := bar_index
+else if shortSignal
+    entryPrice := close
+    stopLoss := close + (stopLossATR * atr)
+    tp1 := close - (stopLoss - close) * takeProfit1
+    tp2 := close - (stopLoss - close) * takeProfit2
+    tradeDirection := -1
+    entryBar := bar_index
+
+// Clear old trades (after 20 bars)
+if bar_index - entryBar > 20
+    entryPrice := na
+    stopLoss := na
+    tp1 := na
+    tp2 := na
+    tradeDirection := 0
+
+// ============================================================================
+// VISUAL ELEMENTS
+// ============================================================================
+
+// EMA Plots
+plot(showEMA ? ema1 : na, color=color.green, linewidth=2, title="Fast EMA (8)")
+plot(showEMA ? ema2 : na, color=color.yellow, linewidth=2, title="Medium EMA (13)")
+plot(showEMA ? ema3 : na, color=color.red, linewidth=2, title="Slow EMA (21)")
+
+// VWAP Plot
+plot(showVWAP ? vwapValue : na, color=color.blue, linewidth=3, title="VWAP", style=plot.style_line)
+
+// Background Colors (with adjustable opacity)
+bgcolor(showBackground and bullishStack ? color.new(color.green, backgroundOpacity) : na, title="Bullish Trend")
+bgcolor(showBackground and bearishStack ? color.new(color.red, backgroundOpacity) : na, title="Bearish Trend")
+bgcolor(showBackground and neutralStack ? color.new(color.gray, backgroundOpacity) : na, title="Neutral Trend")
+
+// Entry Signals with different styles
+if showSignals
+    if signalLabelStyle == "text" or signalLabelStyle == "both"
+        if longSignal
+            label.new(bar_index, low - (atr * 0.3), "LONG", color=color.new(color.green, 0), style=label.style_label_up, textcolor=color.white, size=size.small)
+        if shortSignal
+            label.new(bar_index, high + (atr * 0.3), "SHORT", color=color.new(color.red, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
+
+// Arrow signals (must be in global scope)
+showArrows = showSignals and (signalLabelStyle == "arrow" or signalLabelStyle == "both")
+plotshape(showArrows and longSignal, title="Long Arrow", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small)
+plotshape(showArrows and shortSignal, title="Short Arrow", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small)
+
+// SL/TP Visualization (improved to not affect scaling)
+if showSLTPMode == "current" and not na(entryPrice)
+    // Only show horizontal lines for current trade
+    line.new(entryBar, entryPrice, bar_index, entryPrice, color=color.new(color.blue, 50), style=line.style_dotted, width=1)
+    line.new(entryBar, stopLoss, bar_index, stopLoss, color=color.new(color.red, 50), style=line.style_dotted, width=1)
+    line.new(entryBar, tp1, bar_index, tp1, color=color.new(color.green, 50), style=line.style_dotted, width=1)
+    line.new(entryBar, tp2, bar_index, tp2, color=color.new(color.green, 30), style=line.style_dotted, width=1)
+
+if showSLTPMode == "labels" and not na(entryPrice)
+    // Only show small labels at current bar
+    label.new(bar_index, stopLoss, "SL", color=color.new(color.red, 80), style=label.style_label_left, textcolor=color.red, size=size.tiny)
+    label.new(bar_index, tp1, "T1", color=color.new(color.green, 80), style=label.style_label_left, textcolor=color.green, size=size.tiny)
+    label.new(bar_index, tp2, "T2", color=color.new(color.green, 80), style=label.style_label_left, textcolor=color.green, size=size.tiny)
+
+// ============================================================================
+// COMPACT INFORMATION PANEL
+// ============================================================================
+
+if showInfoPanel
+    var table infoTable = na
+    
+    // Adjust table size based on user preference
+    textSize = infoPanelSize == "tiny" ? size.tiny : infoPanelSize == "small" ? size.small : size.normal
+    
+    // Create smaller table
+    infoTable := table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 85))
+    
+    // Trend Status
+    trendText = bullishStack ? "↑ BULL" : bearishStack ? "↓ BEAR" : "→ NEUTRAL"
+    trendColor = bullishStack ? color.green : bearishStack ? color.red : color.gray
+    table.cell(infoTable, 0, 0, "TREND", text_color=color.gray, text_size=textSize)
+    table.cell(infoTable, 1, 0, trendText, text_color=trendColor, text_size=textSize)
+    
+    // VWAP Status
+    vwapText = aboveVWAP ? "↑" : "↓"
+    vwapColor = aboveVWAP ? color.green : color.red
+    table.cell(infoTable, 0, 1, "VWAP", text_color=color.gray, text_size=textSize)
+    table.cell(infoTable, 1, 1, vwapText, text_color=vwapColor, text_size=textSize)
+    
+    // RSI Value
+    rsiText = str.tostring(rsi, "#")
+    rsiColor = rsi > rsiOverbought ? color.red : rsi < rsiOversold ? color.green : color.white
+    table.cell(infoTable, 0, 2, "RSI", text_color=color.gray, text_size=textSize)
+    table.cell(infoTable, 1, 2, rsiText, text_color=rsiColor, text_size=textSize)
+    
+    // Volume Status
+    volText = volumeSpike ? "⚡" : "•"
+    volColor = volumeSpike ? color.yellow : color.gray
+    table.cell(infoTable, 0, 3, "VOL", text_color=color.gray, text_size=textSize)
+    table.cell(infoTable, 1, 3, volText, text_color=volColor, text_size=textSize)
+    
+    // Signal Status
+    signalText = longSignal ? "▲ BUY" : shortSignal ? "▼ SELL" : "..."
+    signalColor = longSignal ? color.new(color.green, 0) : shortSignal ? color.new(color.red, 0) : color.gray
+    table.cell(infoTable, 0, 4, "SIGNAL", text_color=color.gray, text_size=textSize)
+    table.cell(infoTable, 1, 4, signalText, text_color=signalColor, text_size=textSize)
+
+// ============================================================================
+// PIP CALCULATOR FOR FOREX (EUR/USD specific)
+// ============================================================================
+
+// Calculate pip values for display
+pipSize = syminfo.mintick * 10
+slPips = math.abs(close - stopLoss) / pipSize
+tp1Pips = math.abs(tp1 - close) / pipSize
+tp2Pips = math.abs(tp2 - close) / pipSize
+
+// ============================================================================
+// ALERTS WITH PIP VALUES
+// ============================================================================
+
+if enableAlerts
+    if longSignal
+        alertMessage = "LONG Signal: " + syminfo.ticker + 
+                      "\nEntry: " + str.tostring(close, "#.#####") + 
+                      "\nSL: " + str.tostring(stopLoss, "#.#####") + " (-" + str.tostring(slPips, "#.#") + " pips)" +
+                      "\nTP1: " + str.tostring(tp1, "#.#####") + " (+" + str.tostring(tp1Pips, "#.#") + " pips)" +
+                      "\nTP2: " + str.tostring(tp2, "#.#####") + " (+" + str.tostring(tp2Pips, "#.#") + " pips)"
+        alert(alertMessage, alert.freq_once_per_bar)
+    
+    if shortSignal
+        alertMessage = "SHORT Signal: " + syminfo.ticker + 
+                      "\nEntry: " + str.tostring(close, "#.#####") + 
+                      "\nSL: " + str.tostring(stopLoss, "#.#####") + " (-" + str.tostring(slPips, "#.#") + " pips)" +
+                      "\nTP1: " + str.tostring(tp1, "#.#####") + " (+" + str.tostring(tp1Pips, "#.#") + " pips)" +
+                      "\nTP2: " + str.tostring(tp2, "#.#####") + " (+" + str.tostring(tp2Pips, "#.#") + " pips)"
+        alert(alertMessage, alert.freq_once_per_bar)
+
+// ============================================================================
+// PERFORMANCE TRACKING
+// ============================================================================
+
+// Session statistics
+var int dailyLongs = 0
+var int dailyShorts = 0
+var float sessionStart = na
+
+if ta.change(time("D"))
+    dailyLongs := 0
+    dailyShorts := 0
+    sessionStart := time
+
+if longSignal
+    dailyLongs += 1
+    
+if shortSignal
+    dailyShorts += 1
+
+// Optional: Display session stats in chart
+if barstate.islast and showInfoPanel
+    statsText = "Session: L:" + str.tostring(dailyLongs) + " S:" + str.tostring(dailyShorts)
+    label.new(bar_index + 5, close, statsText, color=color.new(color.blue, 100), textcolor=color.new(color.white, 50), style=label.style_none, size=size.tiny, yloc=yloc.price)

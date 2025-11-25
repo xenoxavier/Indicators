@@ -1,0 +1,81 @@
+//@version=5
+indicator("MZ Strateji Asistanı (S/R + Trend)", overlay=true)
+
+// --- AYARLAR ---
+grp1 = "Genel Ayarlar"
+length = input.int(20, title="Pivot Hassasiyeti", minval=5, group=grp1, tooltip="Küçük sayı = Kısa vade, Büyük sayı = Uzun vade")
+showTable = input.bool(true, title="Bilgi Panelini Göster", group=grp1)
+
+grp2 = "Görsel Ayarlar"
+resColor = input.color(color.red, title="Direnç Rengi", group=grp2)
+supColor = input.color(color.green, title="Destek Rengi", group=grp2)
+lineWidth = input.int(2, title="Çizgi Kalınlığı", minval=1, group=grp2)
+trendLookback = input.int(200, title="Trend Yönü İçin EMA", minval=10, group=grp2)
+
+// --- HESAPLAMALAR ---
+ph = ta.pivothigh(high, length, length)
+pl = ta.pivotlow(low, length, length)
+
+// Trend Yönü Belirleme (EMA 200 Mantığı - Merter Hoca'nın genel kabulü)
+emaTrend = ta.ema(close, trendLookback)
+trendDirection = close > emaTrend ? 1 : -1 // 1: Yükseliş, -1: Düşüş
+
+// --- 1. YATAY DESTEK VE DİRENÇLER (TEK ÇİZGİ) ---
+var line currentResLine = na
+var line currentSupLine = na
+
+// Direnç Güncelleme
+if not na(ph)
+    line.delete(currentResLine)
+    currentResLine := line.new(x1=bar_index[length], y1=ph, x2=bar_index, y2=ph, color=resColor, width=lineWidth, style=line.style_dashed, extend=extend.right)
+
+// Destek Güncelleme
+if not na(pl)
+    line.delete(currentSupLine)
+    currentSupLine := line.new(x1=bar_index[length], y1=pl, x2=bar_index, y2=pl, color=supColor, width=lineWidth, style=line.style_dashed, extend=extend.right)
+
+// --- 2. OTOMATİK TREND ÇİZGİLERİ (KANAL) ---
+var line uptrendLine = na
+var line downtrendLine = na
+
+// Değişkenler (Son 2 pivotu tutmak için)
+var int p1_x = na, var float p1_y = na // Son Tepe
+var int p2_x = na, var float p2_y = na // Son Dip
+
+// Düşen Trend Çizgisi (Tepeleri Birleştirir)
+if not na(ph)
+    if not na(p1_x)
+        line.delete(downtrendLine)
+        downtrendLine := line.new(x1=p1_x, y1=p1_y, x2=bar_index[length], y2=ph, color=color.new(resColor, 50), width=1, extend=extend.right)
+    p1_x := bar_index[length]
+    p1_y := ph
+
+// Yükselen Trend Çizgisi (Dipleri Birleştirir)
+if not na(pl)
+    if not na(p2_x)
+        line.delete(uptrendLine)
+        uptrendLine := line.new(x1=p2_x, y1=p2_y, x2=bar_index[length], y2=pl, color=color.new(supColor, 50), width=1, extend=extend.right)
+    p2_x := bar_index[length]
+    p2_y := pl
+
+// --- 3. BİLGİ PANELİ (DASHBOARD) ---
+if showTable
+    var table panel = table.new(position.top_right, 2, 4, border_width=1)
+    
+    // Başlık
+    table.cell(panel, 0, 0, "STRATEJİ DURUMU", bgcolor=color.gray, text_color=color.white, width=15)
+    
+    // Trend Yönü
+    txtTrend = trendDirection == 1 ? "YÜKSELEN TREND 🚀" : "DÜŞEN TREND 🔻"
+    colTrend = trendDirection == 1 ? color.green : color.red
+    table.cell(panel, 0, 1, txtTrend, bgcolor=colTrend, text_color=color.white)
+    
+    // Ne Yapmalı? (Öneri)
+    txtAction = trendDirection == 1 ? "Destekte LONG Ara / Direnç Kırılımı Bekle" : "Dirençte SHORT Ara / Destek Kırılımı Bekle"
+    table.cell(panel, 0, 2, txtAction, bgcolor=color.new(color.blue, 80), text_color=color.white, text_size=size.small)
+    
+    // Fiyat Konumu
+    distToRes = not na(currentResLine) ? math.abs(close - line.get_y2(currentResLine)) : na
+    distToSup = not na(currentSupLine) ? math.abs(close - line.get_y2(currentSupLine)) : na
+    closest = na(distToRes) ? "Veri Yok" : (distToRes < distToSup ? "DİRENCE YAKIN" : "DESTEĞE YAKIN")
+    table.cell(panel, 0, 3, "Konum: " + closest, bgcolor=color.black, text_color=color.white, text_size=size.small)

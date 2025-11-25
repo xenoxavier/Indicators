@@ -1,0 +1,80 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © EMA34TRADER
+//@version=6
+indicator("Trinity KST (known sure thing) Pro", shorttitle="Trinity KST Pro", overlay=false, precision=4)
+
+// ── INPUTS ─────────────────────────────────────
+smoothType     = input.string("ALMA", "Smoothing Method", options=["SMA","EMA","HEMA","TEMA","ALMA"])
+aggressiveness = input.float(0.93, "ALMA Aggressiveness", minval=0.5, maxval=0.99, step=0.01)
+
+roclen1 = input.int(10, "ROC Length #1")
+roclen2 = input.int(15, "ROC Length #2")
+roclen3 = input.int(20, "ROC Length #3")
+roclen4 = input.int(30, "ROC Length #4")
+
+smalen1 = input.int(10, "Smooth Length #1")
+smalen2 = input.int(10, "Smooth Length #2")
+smalen3 = input.int(10, "Smooth Length #3")
+smalen4 = input.int(15, "Smooth Length #4")
+
+siglen      = input.int(9,  "Signal Line Length")
+showHist    = input.bool(true,  "Show Histogram")
+showSignals = input.bool(true,  "Show Buy/Sell Labels")
+
+// ── SMOOTHING FUNCTIONS ───────────────────────
+sma(src, len)  => ta.sma(src, len)
+ema(src, len)  => ta.ema(src, len)
+
+tema(src, len) =>
+    e1 = ta.ema(src, len)
+    e2 = ta.ema(e1, len)
+    e3 = ta.ema(e2, len)
+    3*(e1 - e2) + e3
+
+hema(src, len) =>
+    h = math.round(len/2)
+    s = math.round(math.sqrt(len))
+    ta.wma(2*ta.wma(src, h) - ta.wma(src, len), s)
+
+alma(src, len) =>
+    offset = math.min(0.99, aggressiveness + (1 - len/200.0))
+    ta.alma(src, len, offset, 6)
+
+// ── 100% SAFE SMOOTH – ONE LINE ONLY ──────────
+smooth(src, len) =>
+    smoothType == "SMA"  ? sma(src, len) : smoothType == "EMA"  ? ema(src, len) : smoothType == "TEMA" ? tema(src, len) : smoothType == "HEMA" ? hema(src, len) : alma(src, len)
+
+// ── KST CALCULATION ───────────────────────────
+kst = 1 * smooth(ta.roc(close, roclen1), smalen1) +
+      2 * smooth(ta.roc(close, roclen2), smalen2) +
+      3 * smooth(ta.roc(close, roclen3), smalen3) +
+      4 * smooth(ta.roc(close, roclen4), smalen4)
+
+signal = ta.sma(kst, siglen)
+hist   = kst - signal
+
+// ── PLOTS ─────────────────────────────────────
+plot(kst,    "KST",    color = kst > signal ? color.teal : color.orange, linewidth=2)
+plot(signal, "Signal", color = #F44336, linewidth=2)
+hline(0, "Zero", color=color.gray, linestyle=hline.style_dashed)
+
+// Histogram
+histColor = hist >= 0 ? color.new(#26A69A, 0) : color.new(#EF5350, 0)
+fillColor = hist >= 0 ? color.new(#26A69A, 70) : color.new(#EF5350, 70)
+
+pHist = plot(showHist ? hist : na, "Histogram", color=histColor, style=plot.style_columns, linewidth=4)
+pZero = plot(0, display=display.none)
+fill(pHist, pZero, color=fillColor)
+
+// ── SIGNALS – PERFECTLY ALIGNED IN OSCILLATOR ──
+bull = ta.crossover(kst, signal)
+bear = ta.crossunder(kst, signal)
+
+plotshape(bull and showSignals,  title="BUY",  location=location.bottom, style=shape.labelup,   size=size.small, color=#26A69A, textcolor=color.white, text="BUY")
+plotshape(bear and showSignals,  title="SELL", location=location.top,    style=shape.labeldown, size=size.small, color=#EF5350, textcolor=color.white, text="SELL")
+
+// ── ALERTS ────────────────────────────────────
+alertcondition(bull, "KST Bullish", "KST crossed above signal")
+alertcondition(bear, "KST Bearish", "KST crossed below signal")
+
+bgcolor(bull ? color.new(#26A69A,94) : bear ? color.new(#EF5350,94) : na)

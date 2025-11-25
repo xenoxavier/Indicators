@@ -1,0 +1,312 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © RunRox
+
+//@version=6
+indicator(
+     title = "OTT Volatility [RunRox]", 
+     shorttitle="OTT Volatility [RunRox]", 
+     overlay=false,
+     max_boxes_count = 500
+     )
+
+//------------------------------------------------------------------------------
+//#region             Const
+//------------------------------------------------------------------------------{
+     
+disp = display.all - display.status_line
+var int DT = 1000 * timeframe.in_seconds()
+const color NO_COLOR = #00000000
+
+// Tooltips
+const string BASE_TF_TT = "Select the higher timeframe for calculating historical ranges.
+ Auto mode automatically selects appropriate timeframe based on chart timeframe."
+const string MAX_HIST_LEN_TT = "Maximum number of historical periods to store for analysis.\n 
+ Higher values provide more data but use more memory\n. 
+ Lower values increase the variability of the data."
+const string FUTURE_TT = "Display projected future ranges based on historical data.
+ And the number of future bars to project ranges for."
+const string HIST_STYLE_TT = "Display mode:\n
+ Absolute (raw values), \n
+ Relative (percentage of max), \n
+ Average Centered (centered around average), \n
+ Trim Low Values (cuts off low outliers)."
+const string HIST_COLOR_TT = "Color for bars with above-average, average and below-average range values."
+const string TABLE_SIZE_TT = "Size of the information panel. Set to 'Off' to disable the panel."
+const string TABLE_COLOR_TT = "Color for the information panel. Background, Text, Border"
+
+enum Periods
+    auto = "Auto"
+    m = "1 Minute"
+    h = "1 Hour"
+    d = "1 Day"
+    w = "1 Week"
+
+enum HistStyle
+    abs = "Absolute"
+    rel = "Relative"
+    cent = "Average Centered"
+    cut = "Trim Low Values"
+
+enum LineStyle
+    sol     = '⸺⸺'
+    dsh     = '— — — —'
+    dot     = '··········'
+
+// @function		Transform enum LineStyle to TW constants
+// @param style	    (LineStyle)	Line style 
+// @returns			(string)	TW line style constant
+getLineStyle(LineStyle style)=>
+    switch style
+        LineStyle.sol => line.style_solid
+        LineStyle.dsh => line.style_dashed
+        LineStyle.dot => line.style_dotted
+
+//#endregion
+//------------------------------------------------------------------------------}
+//#region             Input
+//------------------------------------------------------------------------------{
+
+const string GROUP_MAIN = "⚙️ Main Settings"
+baseTf = input.enum(Periods.auto, "Base Timeframe", group = GROUP_MAIN, display = disp, tooltip = BASE_TF_TT)
+maxHistLen = input.int(100, "Max Sample Size", minval=10, maxval = 4000, group = GROUP_MAIN, display = disp, tooltip = MAX_HIST_LEN_TT)
+_showFuture = input.bool(true, "Show Future Ranges", inline = "future", group = GROUP_MAIN, display = disp, tooltip = FUTURE_TT)
+futureNum = input.int(100, "", inline = "future", minval=0, maxval = 1000, group = GROUP_MAIN, display = disp)
+showCurTr = input.bool(false, "Show Current True Range", group = GROUP_MAIN, display = disp)
+
+const string GROUP_STYLE = "🎨 Style"
+curTrColor = input.color(#63636380, "Current TR", group = GROUP_STYLE, display = disp)
+histStyle = input.enum(HistStyle.abs, "Plot Style", group = GROUP_STYLE, display = disp, tooltip = HIST_STYLE_TT)
+highColor = input.color(#ff9800, "Historical Color  ", inline = "hcolors", group = GROUP_STYLE, display = disp, tooltip = HIST_COLOR_TT)
+midColor = input.color(#ffeb3b, " ", inline = "hcolors", group = GROUP_STYLE, display = disp)
+lowColor = input.color(#dbdbdb, "", inline = "hcolors", group = GROUP_STYLE, display = disp)
+highColorF = input.color(#ff9900a0, "Future Color     ", inline = "fcolors", group = GROUP_STYLE, display = disp, tooltip = HIST_COLOR_TT)
+midColorF = input.color(#ffeb3ba0, " ", inline = "fcolors", group = GROUP_STYLE, display = disp)
+lowColorF = input.color(#dbdbdba0, "", inline = "fcolors", group = GROUP_STYLE, display = disp)
+separEnabled = input.bool(true, "Future Line ", inline = "separ", group = GROUP_STYLE, display = disp)
+separColor = input.color(#ce2e2e80, "", inline = "separ", group = GROUP_STYLE, display = disp)
+separStyle = getLineStyle(input.enum(LineStyle.sol, ' ', inline = 'separ', group = GROUP_STYLE, display = disp)),
+separWidth = input.int(2, '', inline = 'separ', group = GROUP_STYLE, display = disp)
+separTextSize = input.string(
+             size.small, 
+             "Text",
+             options = ["Off", size.tiny, size.small, size.normal, size.large, size.huge],
+             group = GROUP_STYLE, 
+             display = disp
+             )
+enSeparText = separEnabled and (separTextSize != "Off")
+
+const string GROUP_INFO = "📅 Info Panel"
+tableSize = input.string(
+             size.small, 
+             "Info Panel",
+             options = ["Off", size.auto, size.tiny, size.small, size.normal, size.large, size.huge],
+             group = GROUP_INFO, 
+             display = disp,
+             tooltip = TABLE_SIZE_TT
+             )
+tableBgColor = input.color(color.black, "Backgorund & Text", inline = "table", group = GROUP_INFO, display = disp, tooltip = TABLE_COLOR_TT)
+tableTextColor = input.color(#ffffff, "", inline = "table", group = GROUP_INFO, display = disp)
+tableBorderColor = input.color(#7a7a7a80, "", inline = "table", group = GROUP_INFO, display = disp)
+var showInfo = tableSize != "Off"
+
+//#endregion
+//------------------------------------------------------------------------------}
+//#region             Global Vars
+//------------------------------------------------------------------------------{
+
+getAutoTf() =>
+    switch
+        timeframe.isseconds and timeframe.multiplier < 5 => "1"
+        timeframe.isseconds or timeframe.isminutes and timeframe.multiplier < 2 => "60"
+        timeframe.isminutes and timeframe.multiplier < 30 => "1D"
+        => "1W"
+
+var htf = switch baseTf
+    Periods.m => "1"
+    Periods.h => "60"
+    Periods.d => "1D"
+    Periods.w => "1W"
+    => getAutoTf()
+
+var float _candlesPerInterval = timeframe.in_seconds(htf) / timeframe.in_seconds()
+var settingsAreValid = _candlesPerInterval > 1
+var int candlesPerInterval = settingsAreValid ? math.round(_candlesPerInterval) : 0
+
+var showFuture = settingsAreValid and _showFuture and futureNum > 0
+
+var matrix<float> histRanges = matrix.new<float>(0, candlesPerInterval, na)
+var array<float> ranges = array.new<float>(candlesPerInterval, na)
+
+//#endregion
+//------------------------------------------------------------------------------}
+//#region             Main
+//------------------------------------------------------------------------------{
+
+var int currentRow = -1
+var int currentPosition = 0
+var int correctedHtfTime = time(htf)
+
+htfTime = time(htf)
+isNewInterval = htfTime != htfTime[1]
+if isNewInterval
+    correctedHtfTime += timeframe.in_seconds(htf) * 1000
+
+currentRange = ta.tr(true)
+
+if settingsAreValid
+    if isNewInterval
+        currentRow := (currentRow + 1) % maxHistLen
+        if histRanges.rows() < maxHistLen
+            histRanges.add_row(currentRow)
+            
+    else if currentRow == -1
+        currentRow := 0
+        histRanges.add_row(currentRow)
+
+    candleTimeOffset = (time - correctedHtfTime) / 1000
+    _temp = math.round(candleTimeOffset / timeframe.in_seconds())
+    currentPosition := (candlesPerInterval + math.round(candleTimeOffset / timeframe.in_seconds())) % candlesPerInterval
+
+if not na(currentRange) and settingsAreValid
+    if histRanges.rows() > 0 and histRanges.columns() > 0
+        histRanges.set(currentRow, currentPosition, currentRange)
+        candleHist = histRanges.col(currentPosition)
+        ranges.set(currentPosition, candleHist.avg())
+
+//#endregion
+//------------------------------------------------------------------------------}
+//#region             Plotting
+//------------------------------------------------------------------------------{
+
+curHist = ranges.get(currentPosition)
+avgHist = ranges.avg()
+maxHist = ranges.max()
+minHist = ranges.min()
+
+getRelRange(float value) =>
+    100 * value / maxHist
+
+getCenteredRange(float value) =>
+    maxDelta = math.max(maxHist - avgHist, avgHist - minHist)
+    100 * (value - avgHist) / maxDelta
+
+getCutRange(float value) =>
+    const float cutoffPerc = 0.9
+    100 * (value - minHist * cutoffPerc) / (maxHist - minHist * cutoffPerc)
+
+getColor(int pos, bool isFuture) =>
+    value = ranges.get(pos)
+    [highClr, midClr, lowClr] = switch
+        isFuture => [highColorF, midColorF, lowColorF]
+        => [highColor, midColor, lowColor]
+    value > avgHist  ? color.from_gradient(value, avgHist, maxHist, midClr, highClr)
+                     : color.from_gradient(value, minHist, avgHist, lowClr, midClr)
+
+getHistData(int position) =>                        
+    if settingsAreValid
+        value = ranges.get(position)
+        switch histStyle
+            HistStyle.abs => value
+            HistStyle.rel => getRelRange(value)
+            HistStyle.cent => getCenteredRange(value)
+            HistStyle.cut => getCutRange(value)
+
+getCurData() =>
+    switch histStyle
+        HistStyle.abs => currentRange
+        HistStyle.rel => getRelRange(currentRange)
+        HistStyle.cent => getCenteredRange(currentRange)
+        HistStyle.cut => getCutRange(currentRange)
+
+plot(getHistData(currentPosition),
+     "Historical True Range",
+     color = getColor(currentPosition, false), 
+     style = plot.style_columns
+     )
+plot(showCurTr ? getCurData() : na,
+     "Current True Range", 
+     color = curTrColor, 
+     style = plot.style_columns
+     )
+
+
+if showFuture and (barstate.islastconfirmedhistory or barstate.isconfirmed and barstate.islast)
+    var line sepLine = not separEnabled ? na : line.new(
+         bar_index, 
+         0, 
+         bar_index, 
+         curHist, 
+         extend = extend.both,
+         color = separColor,
+         style = separStyle,
+         width = separWidth
+         )
+         
+    var label sepLb = not enSeparText ? na : label.new(
+         bar_index + 2,
+         histStyle == HistStyle.abs ? maxHist : 100,
+         "Future",
+         color = NO_COLOR,
+         textcolor = separColor,
+         style = label.style_label_lower_left,
+         size = separTextSize,
+         textalign = text.align_center
+         )
+    var boxes = array.new<box>()
+
+    for bx in boxes
+        bx.delete()
+    boxes.clear()
+    sepLine.set_x1(bar_index + 2)
+    sepLine.set_x2(bar_index + 2)
+    sepLb.set_x(bar_index + 2)
+
+    int offsetCorrection = 0
+    for i = 2 to futureNum + 1
+        pos = (currentPosition + i) % candlesPerInterval
+        histVal = getHistData(pos)
+        clr = getColor(pos, true)
+        if na(histVal)
+            offsetCorrection += 1
+        else
+            boxes.push(na(histVal) ? na :
+                 box.new(
+                         left = bar_index +  i - offsetCorrection, 
+                         top = histVal, 
+                         right = bar_index + i + 1 - offsetCorrection, 
+                         bottom = 0, 
+                         border_color = color.new(chart.bg_color, 50), 
+                         border_width = 1, 
+                         bgcolor = clr
+                         )
+                 )
+
+//#endregion
+//------------------------------------------------------------------------------}
+//#region             Info Panel
+//------------------------------------------------------------------------------{
+
+method fillCell(table this, int col, int row, string txt, color bgColor=na) =>
+    _bgColor = na(bgColor) ? tableBgColor : bgColor
+    this.cell(col, 
+              row, 
+              txt,
+              text_color = tableTextColor, 
+              text_size = tableSize, 
+              bgcolor = _bgColor
+              )
+
+if showInfo and (barstate.islastconfirmedhistory or barstate.isconfirmed and barstate.islast)
+    var table infoTable = table.new(position.top_right, 2, 5, tableBgColor, tableBorderColor, 1, tableBorderColor, 1)
+    var tfHumanName = switch htf
+        "1" => str.tostring(Periods.m)
+        "60" => str.tostring(Periods.h)
+        "1D" => str.tostring(Periods.d)
+        "1W" => str.tostring(Periods.w)
+    infoTable.fillCell(0, 0, "HTF")
+    infoTable.fillCell(1, 0, tfHumanName)
+    infoTable.fillCell(0, 1, "Samples")
+    infoTable.fillCell(1, 1, str.tostring(histRanges.rows()))
+
+//#endregion
+//------------------------------------------------------------------------------}

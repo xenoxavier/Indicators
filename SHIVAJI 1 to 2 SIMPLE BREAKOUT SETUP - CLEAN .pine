@@ -1,0 +1,47 @@
+//@version=5
+indicator("SHIVAJI 1:2 SIMPLE BREAKOUT SETUP - CLEAN", overlay=true, max_labels_count=500)
+
+// ===== INPUTS =====
+maLen   = input.int(20, "Trend MA Length")
+volLen  = input.int(20, "Volume MA Length")
+volMult = input.float(1.5, "Volume Multiplier")
+
+// ===== CALCULATIONS =====
+ma = ta.sma(close, maLen)
+volMA = ta.sma(volume, volLen)
+highVol = volume > volMA * volMult
+
+// ===== BREAKOUT CONDITIONS =====
+// Bullish breakout: close above previous high, above trend MA, with volume
+bullBreak = (close > high[1]) and (close > ma) and highVol
+
+// Bearish breakout: close below previous low, below trend MA, with volume
+bearBreak = (close < low[1]) and (close < ma) and highVol
+
+// ===== PULLBACK RULE (previous candle was breakout, current candle is pullback) =====
+pullbackBuy  = bullBreak[1] and (close <= (high[1] + low[1]) / 2)
+pullbackSell = bearBreak[1] and (close >= (high[1] + low[1]) / 2)
+
+// ===== ENTRIES, SL, TP (1:2) =====
+// For BUY: SL = low of breakout candle (high[1]/low[1] refer previous candle which was breakout)
+// Note: Using safe fallback with nz() to avoid runtime errors
+buyEntry = pullbackBuy
+buySL = nz(low[1])
+buyRisk = math.abs(close - buySL)
+buyTP = close + buyRisk * 2
+
+sellEntry = pullbackSell
+sellSL = nz(high[1])
+sellRisk = math.abs(sellSL - close)
+sellTP = close - sellRisk * 2
+
+// ===== PLOT SIGNALS =====
+plotshape(buyEntry, title="BUY", style=shape.labelup, location=location.belowbar, color=color.green, text="BUY", textcolor=color.white, size=size.large)
+plotshape(sellEntry, title="SELL", style=shape.labeldown, location=location.abovebar, color=color.red, text="SELL", textcolor=color.white, size=size.large)
+
+// ===== PLOT SL / TP LINES WHEN SIGNAL APPEARS =====
+plot(buyEntry ? buySL : na, title="Buy SL", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(buyEntry ? buyTP : na, title="Buy TP", color=color.green, linewidth=2, style=plot.style_linebr)
+
+plot(sellEntry ? sellSL : na, title="Sell SL", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(sellEntry ? sellTP : na, title="Sell TP", color=color.green, linewidth=2, style=plot.style_linebr)
